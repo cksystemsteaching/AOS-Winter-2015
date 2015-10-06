@@ -7,8 +7,9 @@ Advanced Operating Systems 2015
 Home work flow
 ==============
 
-* Step 1: get a github account
-* Step 2: fork the AOS-Winter-2015 repository by clicking [here](https://github.com/cksystemsteaching/AOS-Winter-2015/fork)
+* Step 0: form a team of 2-3 members
+* Step 1: get a github account (for each member)
+* Step 2: one person per group forks the AOS-Winter-2015 repository by clicking [here](https://github.com/cksystemsteaching/AOS-Winter-2015/fork) and adds the other team members as collaborators
 * Step 3: check out the branch named __selfie-master__ in __your__ fork of AOS-Winter-2015
 * Step 4: Implement the first assignment (see below)
 * Step 5: Send a pull request containing your solution via github.com to [cksystemsteaching/AOS-Winter-2015/tree/selfie-master](https://github.com/cksystemsteaching/AOS-Winter-2015/tree/selfie-master)
