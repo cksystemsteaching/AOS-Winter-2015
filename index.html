@@ -51,12 +51,13 @@
         <h1><a href="http://www.uni-salzburg.at"><img src="http://www.gravatar.com/avatar/327a7ee75cbb70f686e645e7536c3bf6?s=140" class="img-circle"></a>  Advanced Systems</h1>
         <br>
         <p>
-        This graduate course is a hands-on class based on a MIPS emulation
-        and operating system framework capable of running System-V/o32
-        compatible code. Students develop solutions to problems such as
-        kernel/userspace interaction, resource management, process isolation, and inter-process communication on a virtual machine and host their software on <a
-          href="https://github.com/cksystemsteaching">GitHub</a>. We thank <a
-          href="https://github.com">GitHub</a> for supporting us!
+        This graduate course is a hands-on class based on the
+        <a href="http://selfie.cs.uni-salzburg.at">Selfie Project</a>
+        which is an educational system of a self-compiling C compiler and
+        a self-executing MIPS emulator. Students develop solutions to problems
+        such as process switching and scheduling, inter-process communication,
+        and memory management as part of the selfie system and
+        host their software on <a href="https://github.com/">GitHub</a>.
         </p>
 
         <br>
@@ -67,11 +68,26 @@
       <div class="row">
         <div class="col-md-4">
           <h2>Topics</h2>
-          <p>The course provides an introduction to basic and advanced operating system concepts. Covered topics are bootstrapping, interrupt handling, IO handling, device drivers, threads, scheduling, kernel space, user space, system calls, processes, virtual memory, file systems, multiprocessing, real time, and virtualization.</p>
+          <p>The course provides a hands-on introduction to basic and advanced
+          operating system concepts. Covered topics include interrupt
+          handling, scheduling, kernel space, user space, system calls,
+          processes, and virtual memory. The course also provides an
+          introduction to the MIPS instruction set architecture and
+          a common (System-V/o32) calling ABI.</p>
         </div>
         <div class="col-md-4">
           <h2>Concept</h2>
-          <p>The course is not based on any existing textbook but instead makes use of an emulation framework that hosts kernel code in the emulator itself, effectively circumventing the problem of self-referentiality (and bootstrapping) of operating systems. The course focuses first on principles, such as isolation and resource management and their solutions (scheduling, virtual memory) and then enables students to port existing kernel code from within the emulator to run like real kernel code on top of the emulator.</p>
+          <p>The course is based on a new
+          <a href="http://leanpub.com/selfie">textbook</a> available in draft
+          form and makes use of the MIPS emulator in selfie that hosts kernel
+          code in the emulator itself, effectively circumventing the problem of
+          self-referentiality (and bootstrapping) of operating systems. The
+          course focuses on principles, such as isolation and resource 
+          management and their solutions (scheduling, virtual memory),
+          rather than the complexity of running on actual hardware. Students
+          provide solutions by implementing them in the kernel of the selfie
+          emulator and then porting the code from within the emulator to run 
+          like real kernel code on top of the emulator.</p>
         </div>
         <div class="col-md-4">
           <h2>Goal</h2>
