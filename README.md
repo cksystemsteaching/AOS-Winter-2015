@@ -35,7 +35,7 @@ Review [linked lists](https://en.wikipedia.org/wiki/Linked_list) and implement a
 Assignment 1: Loading, scheduling, switching, execution
 -------------------------------------------------------
 
-Implement basic concurrent executio of _n_ processes in mipster. _n >= 2_ 
+Implement basic concurrent execution of _n_ processes in mipster. _n >= 2_ 
 
 * understand how mipster [interprets and executes binary instructions](https://github.com/cksystemsteaching/AOS-Winter-2015/blob/selfie-master/selfie.c#L3933). Tipp: add your own comments to the code
 * mipster maintains a local state for a process (running executable), e.g., pc, registers, memory
