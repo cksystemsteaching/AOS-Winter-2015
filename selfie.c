@@ -424,6 +424,25 @@ void initScanner () {
 }
 
 // -----------------------------------------------------------------
+// ----------------------------- LIST ------------------------------
+// -----------------------------------------------------------------
+
+int  *listCreateNewEntry(int *head, int data);
+int  *listGetEntry(int index, int *head);
+
+int  *listGetNext(int *entry);
+int  listGetData(int *entry);
+
+void listSetNext(int *entry, int *next);
+void listSetData(int *entry, int data);
+
+void listSwap(int *list, int index1, int index2);
+int  listSize(int *head);
+void listSort(int *list);
+
+void printList(int *list);
+
+// -----------------------------------------------------------------
 // ------------------------- SYMBOL TABLE --------------------------
 // -----------------------------------------------------------------
 
@@ -4059,6 +4078,167 @@ int main_emulator(int argc, int *argv, int *cstar_argv) {
 }
 
 // -----------------------------------------------------------------
+// ----------------------------- LIST ------------------------------
+// -----------------------------------------------------------------
+
+int listInit() {
+    return -1;
+}
+
+int *listCreateNewEntry(int *head, int data) {
+    int *newEntry;
+
+    // list:
+    // +----+------------+
+    // |  0 | ptr to next|
+    // |  1 | data       | 
+    // +----+------------+
+    newEntry = (int*)malloc(2 * 4);
+    listSetData(newEntry, data);
+    listSetNext(newEntry, head);
+    head = newEntry;
+
+    return head;
+}
+
+int *listGetEntry(int index, int *head) {
+    int i;
+    i = listSize(head) - 1;
+
+    while((int)head != 0) {
+        if(i == index)
+            return head;
+        else
+            head = listGetNext(head);
+        i = i - 1;
+    }
+
+    return 0;
+}
+
+int *listGetNext(int *entry) {
+    return (int*) *entry;
+}
+
+int listGetData(int *entry) {
+    return *(entry + 1);
+}
+
+void listSetNext(int *entry, int *next) {
+    *entry = (int)next;
+}
+
+void listSetData(int *entry, int data) {
+    *(entry + 1) = data;
+}
+
+int listSize(int *head) {
+    int size;
+    size = 0;
+
+    while((int)head != 0) {
+        size = size + 1;
+        head = listGetNext(head);
+    }
+
+    return size;
+}
+
+void printList(int *list) {
+    int i;
+    int size;
+    int data;
+
+    i = 0;
+    size = listSize(list);
+
+    putchar('[');
+    putchar(' ');
+    while(i < size) {
+        data = listGetData(listGetEntry(i, list));
+        print(itoa(data, string_buffer, 10, 0));
+        putchar(' ');
+        i = i + 1;
+    }
+    putchar(']');
+    putchar(10); // Linefeed
+}
+
+void listSwap(int *list, int index1, int index2) {
+    int *entry1;
+    int *entry2;
+    int data1;
+    int data2;
+
+    entry1 = listGetEntry(index1, list);
+    entry2 = listGetEntry(index2, list);
+    data1 = listGetData(entry1);
+    data2 = listGetData(entry2);
+
+    listSetData(entry1, data2);
+    listSetData(entry2, data1);
+}
+
+void listSort(int *list) {
+    int i;
+    int j;
+    int size;
+    int l;
+    int r;
+
+    j = 0;
+    size = listSize(list);
+    i = size;
+
+    while(i > 1) {
+        j = 0;
+        while(j < size - 1) {
+            l = listGetData(listGetEntry(j, list));
+            r = listGetData(listGetEntry(j + 1, list));
+            if(l > r)
+                listSwap(list, j, j + 1);
+            j = j + 1;
+        }
+        i = i - 1;
+    }
+}
+
+void listTest() {
+    int *list1;
+    int *list2;
+    int data;
+
+    printString('l','i','s','t',' ','t','e','s','t',10,0,0,0,0,0,0,0,0,0,0);
+    list1 = 0;
+    list1 = listCreateNewEntry(list1, 4);
+    list1 = listCreateNewEntry(list1, 2);
+    list1 = listCreateNewEntry(list1, 5);
+    list1 = listCreateNewEntry(list1, 3);
+    list1 = listCreateNewEntry(list1, 1);
+    list1 = listCreateNewEntry(list1, 6);
+    printList(list1);
+    listSort(list1);
+    printList(list1);
+
+    list2 = 0;
+    list2 = listCreateNewEntry(list2, 965);
+    list2 = listCreateNewEntry(list2, 1220);
+    list2 = listCreateNewEntry(list2, 12);
+    list2 = listCreateNewEntry(list2, 3);
+    list2 = listCreateNewEntry(list2, 42);
+    list2 = listCreateNewEntry(list2, 6);
+    list2 = listCreateNewEntry(list2, 12);
+    list2 = listCreateNewEntry(list2, 91);
+    list2 = listCreateNewEntry(list2, 7);
+    list2 = listCreateNewEntry(list2, 12);
+    list2 = listCreateNewEntry(list2, 71);
+    list2 = listCreateNewEntry(list2, 232);
+    printList(list2);
+    listSort(list2);
+    printList(list2);
+}
+
+// -----------------------------------------------------------------
 // ----------------------------- MAIN ------------------------------
 // -----------------------------------------------------------------
 
@@ -4127,6 +4307,9 @@ int main(int argc, int *argv) {
                     main_emulator(argc, argv, cstar_argv);
                 else
                     exit(-1);
+            }
+            else if (*(firstParameter+1) == 't') {
+                listTest();
             }
             else {
                 exit(-1);
