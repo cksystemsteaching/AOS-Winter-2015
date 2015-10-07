@@ -429,6 +429,7 @@ void initScanner () {
 
 int  *listCreateNewEntry(int *head, int data);
 int  *listGetEntry(int index, int *head);
+int *listRemoveEntry(int *list, int index);
 
 int  *listGetNext(int *entry);
 int  listGetData(int *entry);
@@ -4081,10 +4082,6 @@ int main_emulator(int argc, int *argv, int *cstar_argv) {
 // ----------------------------- LIST ------------------------------
 // -----------------------------------------------------------------
 
-int listInit() {
-    return -1;
-}
-
 int *listCreateNewEntry(int *head, int data) {
     int *newEntry;
 
@@ -4099,6 +4096,17 @@ int *listCreateNewEntry(int *head, int data) {
     head = newEntry;
 
     return head;
+}
+
+int *listRemoveEntry(int *list, int index) {
+    int *prev;
+    int *curr;
+    int *next;
+
+    prev = listGetEntry(index + 1, list);
+    curr = listGetNext(prev);
+    next = listGetNext(curr);
+    listSetNext(prev, next);
 }
 
 int *listGetEntry(int index, int *head) {
@@ -4217,6 +4225,7 @@ void listTest() {
     list1 = listCreateNewEntry(list1, 1);
     list1 = listCreateNewEntry(list1, 6);
     printList(list1);
+    listRemoveEntry(list1, 4);
     listSort(list1);
     printList(list1);
 
