@@ -437,6 +437,7 @@ int  listGetData(int *entry);
 void listSetNext(int *entry, int *next);
 void listSetData(int *entry, int data);
 
+int  listIsInBounds(int *list);
 void listSwap(int *list, int index1, int index2);
 int  listSize(int *head);
 void listSort(int *list);
@@ -4103,10 +4104,19 @@ int *listRemoveEntry(int *list, int index) {
     int *curr;
     int *next;
 
-    prev = listGetEntry(index + 1, list);
-    curr = listGetNext(prev);
-    next = listGetNext(curr);
-    listSetNext(prev, next);
+    if(listIsInBounds(list, index) == 0)
+        return list;
+
+    if(index == listSize(list) - 1)
+        list = listGetNext(list);
+    else {
+        prev = listGetEntry(index + 1, list);
+        curr = listGetNext(prev);
+        next = listGetNext(curr);
+        listSetNext(prev, next);
+    }
+
+    return list;
 }
 
 int *listGetEntry(int index, int *head) {
@@ -4138,6 +4148,14 @@ void listSetNext(int *entry, int *next) {
 
 void listSetData(int *entry, int data) {
     *(entry + 1) = data;
+}
+
+int listIsInBounds(int *list, int index) {
+    if(index >= listSize(list))
+        return 0;
+    if(index < 0)
+        return 0;
+    return 1;
 }
 
 int listSize(int *head) {
@@ -4225,7 +4243,16 @@ void listTest() {
     list1 = listCreateNewEntry(list1, 1);
     list1 = listCreateNewEntry(list1, 6);
     printList(list1);
-    listRemoveEntry(list1, 4);
+
+    list1 = listRemoveEntry(list1, 5);
+    printList(list1);
+    list1 = listRemoveEntry(list1, 0);
+    printList(list1);
+    list1 = listRemoveEntry(list1, -1);
+    printList(list1);
+    list1 = listRemoveEntry(list1, 10);
+    printList(list1);
+    
     listSort(list1);
     printList(list1);
 
