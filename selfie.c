@@ -437,7 +437,7 @@ int  listGetData(int *entry);
 void listSetNext(int *entry, int *next);
 void listSetData(int *entry, int data);
 
-int  listIsInBounds(int *list);
+int  listIsInBounds(int *list, int index);
 void listSwap(int *list, int index1, int index2);
 int  listSize(int *head);
 void listSort(int *list);
