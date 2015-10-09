@@ -424,6 +424,36 @@ void initScanner () {
 }
 
 // -----------------------------------------------------------------
+// -------------------------- READY LIST ---------------------------
+// -----------------------------------------------------------------
+
+int *rl_init();
+
+int  *rl_get_head(int *list);
+int  rl_get_size(int *list);
+void rl_set_head(int *list, int *head);
+void rl_set_size(int *list, int size);
+
+int  *rl_push_front(int *list, int pc, int *registers, int *memory);
+void rl_remove_from(int *list, int index);
+int  *rl_get_entry_at(int *list, int index);
+
+int  rl_is_in_bounds(int *list, int index);
+
+int  *rl_entry_get_next(int *entry);
+int  rl_entry_get_pc(int *entry);
+int  *rl_entry_get_registers(int *entry);
+int  *rl_entry_get_memory(int *entry);
+
+void rl_entry_set_next(int *entry, int *next);
+void rl_entry_set_pc(int *entry, int pc);
+void rl_entry_set_registers(int *entry, int *registers);
+void rl_entry_set_memory(int *entry, int *memory);
+
+void rl_print(int *list);
+void rl_test();
+
+// -----------------------------------------------------------------
 // ----------------------------- LIST ------------------------------
 // -----------------------------------------------------------------
 
@@ -443,6 +473,8 @@ int  listSize(int *head);
 void listSort(int *list);
 
 void printList(int *list);
+
+void listTest();
 
 // -----------------------------------------------------------------
 // ------------------------- SYMBOL TABLE --------------------------
@@ -4080,6 +4112,200 @@ int main_emulator(int argc, int *argv, int *cstar_argv) {
 }
 
 // -----------------------------------------------------------------
+// -------------------------- READY LIST ---------------------------
+// -----------------------------------------------------------------
+
+int *rl_init() {
+    int *list;
+    int size;
+    int *head;
+    // readylist:
+    // +----+------------+
+    // |  0 | head       |
+    // |  1 | size       |
+    // +----+------------+
+
+    list = (int*)malloc(2 * 4);
+    rl_set_head(list, 0);
+    rl_set_size(list, 0);
+
+    return list;
+}
+
+// Getters
+int *rl_get_head(int *list) {
+    return *list;
+}
+
+int rl_get_size(int *list) {
+    return *(list + 1);
+}
+
+// Setters
+void rl_set_head(int *list, int *head) {
+    *list = head;
+}
+
+void rl_set_size(int *list, int size) {
+    *(list + 1) = size;
+}
+
+int *rl_push_front(int *list, int pc, int *registers, int *memory) {
+    int *newEntry;
+    int *head;
+    int size;
+
+    // readylist entry:
+    // +----+------------+
+    // |  0 | ptr to next|
+    // |  1 | pc         | 
+    // |  2 | registers  |
+    // |  3 | memory     |
+    // +----+------------+
+
+    head = rl_get_head(list);
+    size = rl_get_size(list);
+    newEntry = (int*)malloc(4 * 4);
+
+    rl_entry_set_pc(newEntry, pc);
+    rl_entry_set_registers(newEntry, registers);
+    rl_entry_set_memory(newEntry, memory);
+    rl_entry_set_next(newEntry, head);
+    rl_set_head(list, newEntry); // Set head to the newest entry;
+    rl_set_size(list, size + 1);
+
+    return list;
+}
+
+void rl_remove_from(int *list, int index) {
+    int *head;
+    int *prev;
+    int *curr;
+    int *next;
+
+    // If it's the first index just change the head
+    if(index == 0) {
+        head = rl_get_head(list);
+        rl_set_head(rl_entry_get_next(head));
+    } else {
+        //prev = rl_get_entry_at(list, index - 1);
+        curr = rl_get_entry_at(list, index);
+        //next = rl_get_entry_at(list, index + 1);
+        //rl_entry_set_next(prev, next);
+    }
+}
+
+int *rl_get_entry_at(int *list, int index) {
+    int i;
+    int size;
+    int *head;
+
+    i = 0;
+    size = rl_get_size(list);
+    head = rl_get_head(list);
+
+    while(i < size) {
+        if(i == index)
+            return head;
+        head = rl_entry_get_next(head);
+        i = i + 1;
+    }
+
+    return 0;
+}
+
+int rl_is_in_bounds(int *list, int index) {
+    int size;
+
+    size = rl_get_size(list);
+    if(index < 0)
+        return 0;
+    else if(size <= index)
+        return 0;
+    return 1;
+}
+
+// Entry
+// Getters
+int *rl_entry_get_next(int *entry) {
+    return *entry;
+}
+
+int rl_entry_get_pc(int *entry) {
+    return *(entry + 1);
+}
+
+int *rl_entry_get_registers(int *entry) {
+    return *(entry + 2);
+}
+
+int *rl_entry_get_memory(int *entry) {
+    return *(entry + 3);
+}
+
+// Setters
+void rl_entry_set_next(int *entry, int *next) {
+    *entry = next;
+}
+
+void rl_entry_set_pc(int *entry, int pc) {
+    *(entry + 1) = pc;
+}
+
+void rl_entry_set_registers(int *entry, int *registers) {
+    *(entry + 2) = registers;
+}
+
+void rl_entry_set_memory(int *entry, int *memory) {
+    *(entry + 3) = memory;
+}
+
+// Misc
+void rl_print(int *list) {
+    int i;
+    int size;
+    int data;
+
+    i = 0;
+    size = rl_get_size(list);
+
+    putchar('[');
+    putchar(' ');
+    while(i < size) {
+        data = rl_entry_get_pc(rl_get_entry_at(list, i));
+        print(itoa(data, string_buffer, 10, 0));
+        putchar(' ');
+        i = i + 1;
+    }
+    putchar(']');
+    putchar(10); // Linefeed
+
+    i = 0;
+    putchar('[');
+    putchar(' ');
+    while(i < size) {
+        data = rl_entry_get_registers(rl_get_entry_at(list, i));
+        print(itoa(data, string_buffer, 10, 0));
+        putchar(' ');
+        i = i + 1;
+    }
+    putchar(']');
+    putchar(10); // Linefeed
+
+    i = 0;
+    putchar('[');
+    putchar(' ');
+    while(i < size) {
+        data = rl_entry_get_memory(rl_get_entry_at(list, i));
+        print(itoa(data, string_buffer, 10, 0));
+        putchar(' ');
+        i = i + 1;
+    }
+    putchar(']');
+    putchar(10); // Linefeed
+}
+
+// -----------------------------------------------------------------
 // ----------------------------- LIST ------------------------------
 // -----------------------------------------------------------------
 
@@ -4107,10 +4333,10 @@ int *listRemoveEntry(int *list, int index) {
     if(listIsInBounds(list, index) == 0)
         return list;
 
-    if(index == listSize(list) - 1)
+    if(index == 0)
         list = listGetNext(list);
     else {
-        prev = listGetEntry(index + 1, list);
+        prev = listGetEntry(index - 1, list);
         curr = listGetNext(prev);
         next = listGetNext(curr);
         listSetNext(prev, next);
@@ -4121,14 +4347,14 @@ int *listRemoveEntry(int *list, int index) {
 
 int *listGetEntry(int index, int *head) {
     int i;
-    i = listSize(head) - 1;
+    i = 0;
 
     while((int)head != 0) {
         if(i == index)
             return head;
         else
             head = listGetNext(head);
-        i = i - 1;
+        i = i + 1;
     }
 
     return 0;
@@ -4227,6 +4453,21 @@ void listSort(int *list) {
         }
         i = i - 1;
     }
+}
+
+void readylist_test() {
+    int *list;
+    int *entry;
+    printString('r','e','a','d','y',' ','l','i','s','t',' ','t','e','s','t',10,0,0,0,0);
+
+    list = rl_init();
+    list = rl_push_front(list, 10, 12, 14);
+    list = rl_push_front(list, 512, 112, 114);
+    list = rl_push_front(list, 10, 12, 14);
+    list = rl_push_front(list, 10, 12, 14);
+    list = rl_remove_from(list, 2);
+
+    //rl_print(list);
 }
 
 void listTest() {
@@ -4346,6 +4587,7 @@ int main(int argc, int *argv) {
             }
             else if (*(firstParameter+1) == 't') {
                 listTest();
+                readylist_test();
             }
             else {
                 exit(-1);
