@@ -427,7 +427,7 @@ void initScanner () {
 // -------------------------- ASSIGNMENT1 --------------------------
 // -----------------------------------------------------------------
 
-void initReadyqueue();
+//void initReadyqueue();
 // NUM ... Number of bytes, returns destination
 int *memcpy(int *source, int *destination, int num);
 void printInt(int i);
@@ -446,29 +446,35 @@ void readyqueue_set_size(int *list, int size);
 
 int  readyqueue_is_in_bounds(int *list, int index);
 
-void readyqueue_push_front(int *list, int pc, int *registers, int *memory);
-void readyqueue_push_back(int *list, int pc, int *registers, int *memory);
+void readyqueue_push_front(int *list, int *process);
+void readyqueue_push_back(int *list, int *process);
 
 int *readyqueue_pop_front(int *list);
 int *readyqueue_pop_back(int *list);
 
-void readyqueue_insert_at(int *list, int index, int pc, int *registers, int *memory);
+void readyqueue_insert_at(int *list, int index, int *process);
 int  *readyqueue_remove_at(int *list, int index);
 int  *readyqueue_get_entry_at(int *list, int index);
 
 int  *readyqueue_entry_get_next(int *entry);
-int  readyqueue_entry_get_pc(int *entry);
-int  *readyqueue_entry_get_registers(int *entry);
-int  *readyqueue_entry_get_memory(int *entry);
+int  *readyqueue_entry_get_process(int *entry);
+// int  readyqueue_entry_get_pc(int *entry);
+// int  *readyqueue_entry_get_registers(int *entry);
+// int  *readyqueue_entry_get_memory(int *entry);
 
-void readyqueue_entry_set_entry(int *entry, int *next, int pc, int *registers, int *memory);
+//void readyqueue_entry_set_entry(int *entry, int *next, int pc, int *registers, int *memory);
 void readyqueue_entry_set_next(int *entry, int *next);
-void readyqueue_entry_set_pc(int *entry, int pc);
-void readyqueue_entry_set_registers(int *entry, int *registers);
-void readyqueue_entry_set_memory(int *entry, int *memory);
+void readyqueue_entry_set_process(int *entry, int *process);
+// void readyqueue_entry_set_pc(int *entry, int pc);
+// void readyqueue_entry_set_registers(int *entry, int *registers);
+// void readyqueue_entry_set_memory(int *entry, int *memory);
 
 void readyqueue_print(int *list);
 void readyqueue_test();
+
+// -----------------------------------------------------------------
+// ---------------------------- PROCESS ----------------------------
+// -----------------------------------------------------------------
 
 // ------------------------ GLOBAL VARIABLES -----------------------
 
@@ -4122,7 +4128,7 @@ void up_copyArguments(int argc, int *argv) {
 int main_emulator(int argc, int *argv, int *cstar_argv) {
     printString('e','m','u',10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
     initInterpreter();
-    initReadyqueue(); // A1
+    //initReadyqueue(); // A1
 
     *(registers+REG_GP) = loadBinary(parse_args(argc, argv, cstar_argv));
 
@@ -4139,26 +4145,26 @@ int main_emulator(int argc, int *argv, int *cstar_argv) {
 // -------------------------- ASSIGNMENT1 --------------------------
 // -----------------------------------------------------------------
 
-void initReadyqueue() {
-    int *new_registers;
-    int *new_memory;
-    int i;
+// void initReadyqueue() {
+//     int *new_registers;
+//     int *new_memory;
+//     int i;
 
-    i = 0;
-    readyqueue = readyqueue_init();
-    number_of_instances = 2; // TODO: Make dynamic
+//     i = 0;
+//     readyqueue = readyqueue_init();
+//     number_of_instances = 2; // TODO: Make dynamic
 
-    while(i < number_of_instances) {
-        printString('e','n','q','u','e','u','e',' ',0,0,0,0,0,0,0,0,0,0,0,0);
-        printInt(i);
-        printString('.',' ','i','n','t','o',' ',0,0,0,0,0,0,0,0,0,0,0,0,0);
-        printString('r','e','a','d','y',' ','q','u','e','u','e',10,0,0,0,0,0,0,0,0);
-        memcpy(registers, new_registers, 32); // 32 Registers
-        memcpy(memory, new_memory, maxCodeLength);
-        readyqueue_push_front(readyqueue, pc, new_registers, new_memory);
-        i = i + 1;
-    }
-}
+//     while(i < number_of_instances) {
+//         printString('e','n','q','u','e','u','e',' ',0,0,0,0,0,0,0,0,0,0,0,0);
+//         printInt(i);
+//         printString('.',' ','i','n','t','o',' ',0,0,0,0,0,0,0,0,0,0,0,0,0);
+//         printString('r','e','a','d','y',' ','q','u','e','u','e',10,0,0,0,0,0,0,0,0);
+//         memcpy(registers, new_registers, 32); // 32 Registers
+//         memcpy(memory, new_memory, maxCodeLength);
+//         readyqueue_push_front(readyqueue, pc, new_registers, new_memory);
+//         i = i + 1;
+//     }
+// }
 
 // NUM ... Number of bytes
 int *memcpy(int *source, int *destination, int num) {
@@ -4219,7 +4225,7 @@ void readyqueue_set_size(int *list, int size) {
 }
 
 // Inserts entry at HEAD
-void readyqueue_push_front(int *list, int pc, int *registers, int *memory) {
+void readyqueue_push_front(int *list, int *process) {
     int *newEntry;
     int size;
     int *head;
@@ -4227,31 +4233,33 @@ void readyqueue_push_front(int *list, int pc, int *registers, int *memory) {
     // readylist entry:
     // +----+------------+
     // |  0 | ptr to next|
-    // |  1 | pc         | 
-    // |  2 | registers  |
-    // |  3 | memory     |
+    // |  1 | process    |
     // +----+------------+
 
     head = readyqueue_get_head(list);
     size = readyqueue_get_size(list);
-    newEntry = (int*)malloc(4 * 4);
+    newEntry = (int*)malloc(2 * 4);
 
-    readyqueue_entry_set_entry(newEntry, head, pc, registers, memory);
+    //readyqueue_entry_set_entry(newEntry, head, pc, registers, memory);
+    readyqueue_entry_set_next(newEntry, head);
+    readyqueue_entry_set_process(newEntry, process);
     readyqueue_set_head(list, newEntry); // Set head to the newest entry;
     readyqueue_set_size(list, size + 1);
 }
 
 // Inserts entry at TAIL
-void readyqueue_push_back(int *list, int pc, int *registers, int *memory) {
+void readyqueue_push_back(int *list, int *process) {
     int *newEntry;
     int size;
     int *tail;
 
     size = readyqueue_get_size(list);
     tail = readyqueue_get_entry_at(list, size - 1);
-    newEntry = (int*)malloc(4 * 4);
+    newEntry = (int*)malloc(2 * 4);
 
-    readyqueue_entry_set_entry(newEntry, 0, pc, registers, memory);
+    //readyqueue_entry_set_entry(newEntry, 0, pc, registers, memory);
+    readyqueue_entry_set_next(newEntry, 0);
+    readyqueue_entry_set_process(newEntry, process);
     readyqueue_entry_set_next(tail, newEntry);
     readyqueue_set_size(list, size + 1);
 }
@@ -4274,7 +4282,7 @@ int *readyqueue_pop_back(int *list) {
     return head;
 }
 
-void readyqueue_insert_at(int *list, int index, int pc, int *registers, int *memory) {
+void readyqueue_insert_at(int *list, int index, int *process) {
     int *newEntry;
     int size;
     int *prev;
@@ -4285,7 +4293,7 @@ void readyqueue_insert_at(int *list, int index, int pc, int *registers, int *mem
         return;
 
     if(index == 0) {
-        readyqueue_push_front(list, pc, registers, memory);
+        readyqueue_push_front(list, process);
         return;
     }
 
@@ -4295,7 +4303,9 @@ void readyqueue_insert_at(int *list, int index, int pc, int *registers, int *mem
     curr = readyqueue_entry_get_next(prev);
 
     readyqueue_entry_set_next(prev, newEntry);
-    readyqueue_entry_set_entry(newEntry, curr, pc, registers, memory);
+    //readyqueue_entry_set_entry(newEntry, curr, pc, registers, memory);
+    readyqueue_entry_set_next(newEntry, curr);
+    readyqueue_entry_set_process(newEntry, process);
     readyqueue_set_size(list, size + 1);
 }
 
@@ -4364,86 +4374,70 @@ int *readyqueue_entry_get_next(int *entry) {
     return (int*)*entry;
 }
 
-int readyqueue_entry_get_pc(int *entry) {
-    return *(entry + 1);
+int *readyqueue_entry_get_process(int *entry) {
+    return (int*)(*entry + 1);
 }
 
-int *readyqueue_entry_get_registers(int *entry) {
-    return (int*)*(entry + 2);
-}
+// int readyqueue_entry_get_pc(int *entry) {
+//     return *(entry + 1);
+// }
 
-int *readyqueue_entry_get_memory(int *entry) {
-    return (int*)*(entry + 3);
-}
+// int *readyqueue_entry_get_registers(int *entry) {
+//     return (int*)*(entry + 2);
+// }
+
+// int *readyqueue_entry_get_memory(int *entry) {
+//     return (int*)*(entry + 3);
+// }
 
 // Setters
-void readyqueue_entry_set_entry(int *entry, int *next, int pc, int *registers, int *memory) {
-    readyqueue_entry_set_pc(entry, pc);
-    readyqueue_entry_set_registers(entry, registers);
-    readyqueue_entry_set_memory(entry, memory);
-    readyqueue_entry_set_next(entry, next);
-}
+// void readyqueue_entry_set_entry(int *entry, int *next, int pc, int *registers, int *memory) {
+//     readyqueue_entry_set_pc(entry, pc);
+//     readyqueue_entry_set_registers(entry, registers);
+//     readyqueue_entry_set_memory(entry, memory);
+//     readyqueue_entry_set_next(entry, next);
+// }
 
 void readyqueue_entry_set_next(int *entry, int *next) {
     *entry = (int)next;
 }
 
-void readyqueue_entry_set_pc(int *entry, int pc) {
-    *(entry + 1) = pc;
+void readyqueue_entry_set_process(int *entry, int *process) {
+    *(entry + 1) = (int)process;
 }
 
-void readyqueue_entry_set_registers(int *entry, int *registers) {
-    *(entry + 2) = (int)registers;
-}
+// void readyqueue_entry_set_pc(int *entry, int pc) {
+//     *(entry + 1) = pc;
+// }
 
-void readyqueue_entry_set_memory(int *entry, int *memory) {
-    *(entry + 3) = (int)memory;
-}
+// void readyqueue_entry_set_registers(int *entry, int *registers) {
+//     *(entry + 2) = (int)registers;
+// }
+
+// void readyqueue_entry_set_memory(int *entry, int *memory) {
+//     *(entry + 3) = (int)memory;
+// }
 
 // Misc
-void readyqueue_print(int *list) {
-    int i;
-    int size;
-    int data;
+// void readyqueue_print(int *list) {
+//     int i;
+//     int size;
+//     int data;
 
-    i = 0;
-    size = readyqueue_get_size(list);
+//     i = 0;
+//     size = readyqueue_get_size(list);
 
-    putchar('[');
-    putchar(' ');
-    while(i < size) {
-        data = (int)readyqueue_entry_get_pc(readyqueue_get_entry_at(list, i));
-        print(itoa(data, string_buffer, 10, 0));
-        putchar(' ');
-        i = i + 1;
-    }
-    putchar(']');
-    putchar(10); // Linefeed
-
-    i = 0;
-    putchar('[');
-    putchar(' ');
-    while(i < size) {
-        data = (int)readyqueue_entry_get_registers(readyqueue_get_entry_at(list, i));
-        print(itoa(data, string_buffer, 10, 0));
-        putchar(' ');
-        i = i + 1;
-    }
-    putchar(']');
-    putchar(10); // Linefeed
-
-    i = 0;
-    putchar('[');
-    putchar(' ');
-    while(i < size) {
-        data = (int)readyqueue_entry_get_memory(readyqueue_get_entry_at(list, i));
-        print(itoa(data, string_buffer, 10, 0));
-        putchar(' ');
-        i = i + 1;
-    }
-    putchar(']');
-    putchar(10); // Linefeed
-}
+//     putchar('[');
+//     putchar(' ');
+//     while(i < size) {
+//         data = (int)readyqueue_entry_get_process(readyqueue_get_entry_at(list, i));
+//         print(itoa(data, string_buffer, 10, 0));
+//         putchar(' ');
+//         i = i + 1;
+//     }
+//     putchar(']');
+//     putchar(10); // Linefeed
+// }
 
 // -----------------------------------------------------------------
 // ----------------------------- LIST ------------------------------
@@ -4605,61 +4599,61 @@ void readylist_test() {
     printString('r','e','a','d','y',' ','l','i','s','t',' ','t','e','s','t',10,0,0,0,0);
 
     list = readyqueue_init();
-    readyqueue_push_front(list, 111, registers, memory);
-    readyqueue_push_front(list, 222, registers, memory);
-    readyqueue_push_front(list, 333, registers, memory);
-    readyqueue_push_front(list, 444, registers, memory);
-    readyqueue_print(list);
+    // readyqueue_push_front(list, 111);
+    // readyqueue_push_front(list, 222);
+    // readyqueue_push_front(list, 333);
+    // readyqueue_push_front(list, 444);
+    // readyqueue_print(list);
 
-    printString('i','n','s','e','r','t',' ','a','t',' ','0',10,0,0,0,0,0,0,0,0);
-    readyqueue_insert_at(list, 0, 100, registers, memory);
-    readyqueue_print(list);
+    // printString('i','n','s','e','r','t',' ','a','t',' ','0',10,0,0,0,0,0,0,0,0);
+    // readyqueue_insert_at(list, 0, 100);
+    // readyqueue_print(list);
 
-    printString('i','n','s','e','r','t',' ','a','t',' ','3',10,0,0,0,0,0,0,0,0);
-    readyqueue_insert_at(list, 3, 333, registers, memory);
-    readyqueue_print(list);
+    // printString('i','n','s','e','r','t',' ','a','t',' ','3',10,0,0,0,0,0,0,0,0);
+    // readyqueue_insert_at(list, 3, 333);
+    // readyqueue_print(list);
 
-    printString('r','e','m','o','v','e',' ','a','t',' ','3',10,0,0,0,0,0,0,0,0);
-    readyqueue_remove_at(list, 3);
-    readyqueue_print(list);
+    // printString('r','e','m','o','v','e',' ','a','t',' ','3',10,0,0,0,0,0,0,0,0);
+    // readyqueue_remove_at(list, 3);
+    // readyqueue_print(list);
 
-    printString('r','e','m','o','v','e',' ','a','t',' ','0',10,'e','l','=',0,0,0,0,0);
-    entry = readyqueue_remove_at(list, 0);
-    print(itoa(readyqueue_entry_get_pc(entry), string_buffer, 10, 0));
-    putchar(10);
-    readyqueue_print(list);
+    // printString('r','e','m','o','v','e',' ','a','t',' ','0',10,'e','l','=',0,0,0,0,0);
+    // entry = readyqueue_remove_at(list, 0);
+    // print(itoa(readyqueue_entry_get_process(entry), string_buffer, 10, 0));
+    // putchar(10);
+    // readyqueue_print(list);
 
-    printString('r','e','m','o','v','e',' ','a','t',' ','-','1',10,0,0,0,0,0,0,0);
-    readyqueue_remove_at(list, -1);
-    readyqueue_print(list);
+    // printString('r','e','m','o','v','e',' ','a','t',' ','-','1',10,0,0,0,0,0,0,0);
+    // readyqueue_remove_at(list, -1);
+    // readyqueue_print(list);
 
-    printString('r','e','m','o','v','e',' ','a','t',' ','1',10,'e','l','=',0,0,0,0,0);
-    entry = readyqueue_remove_at(list, 1);
-    print(itoa(readyqueue_entry_get_pc(entry), string_buffer, 10, 0));
-    putchar(10);
-    readyqueue_print(list);
+    // printString('r','e','m','o','v','e',' ','a','t',' ','1',10,'e','l','=',0,0,0,0,0);
+    // entry = readyqueue_remove_at(list, 1);
+    // print(itoa(readyqueue_entry_get_process(entry), string_buffer, 10, 0));
+    // putchar(10);
+    // readyqueue_print(list);
 
-    printString('r','e','m','o','v','e',' ','a','t',' ','1',10,'e','l','=',0,0,0,0,0);
-    entry = readyqueue_remove_at(list, 1);
-    print(itoa(readyqueue_entry_get_pc(entry), string_buffer, 10, 0));
-    putchar(10);
-    readyqueue_print(list);
+    // printString('r','e','m','o','v','e',' ','a','t',' ','1',10,'e','l','=',0,0,0,0,0);
+    // entry = readyqueue_remove_at(list, 1);
+    // print(itoa(readyqueue_entry_get_process(entry), string_buffer, 10, 0));
+    // putchar(10);
+    // readyqueue_print(list);
 
-    printString('p','u','s','h','_','b','a','c','k',10,0,0,0,0,0,0,0,0,0,0);
-    readyqueue_push_back(list, 999, registers, memory);
-    readyqueue_print(list);
+    // printString('p','u','s','h','_','b','a','c','k',10,0,0,0,0,0,0,0,0,0,0);
+    // readyqueue_push_back(list, 999);
+    // readyqueue_print(list);
 
-    printString('p','o','p','_','b','a','c','k',10,'e','l','=',0,0,0,0,0,0,0,0);
-    entry = readyqueue_pop_back(list);
-    print(itoa(readyqueue_entry_get_pc(entry), string_buffer, 10, 0));
-    putchar(10);
-    readyqueue_print(list);
+    // printString('p','o','p','_','b','a','c','k',10,'e','l','=',0,0,0,0,0,0,0,0);
+    // entry = readyqueue_pop_back(list);
+    // print(itoa(readyqueue_entry_get_process(entry), string_buffer, 10, 0));
+    // putchar(10);
+    // readyqueue_print(list);
 
-    printString('p','o','p','_','f','r','o','n','t',10,'e','l','=',0,0,0,0,0,0,0);
-    entry = readyqueue_pop_front(list);
-    print(itoa(readyqueue_entry_get_pc(entry), string_buffer, 10, 0));
-    putchar(10);
-    readyqueue_print(list);
+    // printString('p','o','p','_','f','r','o','n','t',10,'e','l','=',0,0,0,0,0,0,0);
+    // entry = readyqueue_pop_front(list);
+    // print(itoa(readyqueue_entry_get_process(entry), string_buffer, 10, 0));
+    // putchar(10);
+    // readyqueue_print(list);
 }
 
 void listTest() {
