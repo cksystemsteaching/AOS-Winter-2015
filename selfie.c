@@ -427,82 +427,73 @@ void initScanner () {
 // -------------------------- ASSIGNMENT1 --------------------------
 // -----------------------------------------------------------------
 
-//void initReadyqueue();
 // NUM ... Number of bytes, returns destination
-int *memcpy(int *source, int *destination, int num);
+int  *memcpy(int *source, int *destination, int num);
 void printInt(int i);
+void init_readyqueue();
+int  *process_schedule();
+void process_switch(int *process);
 
 // -----------------------------------------------------------------
-// -------------------------- READY QUEUE --------------------------
+// ------------------------------ LIST -----------------------------
 // -----------------------------------------------------------------
 
-int  *readyqueue_init();
+int  *list_init();
 
-int  *readyqueue_get_head(int *list);
-int  readyqueue_get_size(int *list);
+int  *list_get_head(int *list);
+int  list_get_size(int *list);
+void list_set_head(int *list, int *head);
+void list_set_size(int *list, int size);
 
-void readyqueue_set_head(int *list, int *head);
-void readyqueue_set_size(int *list, int size);
+int  list_is_in_bounds(int *list, int index);
+int  list_is_empty(int *list);
 
-int  readyqueue_is_in_bounds(int *list, int index);
+void list_push_front(int *list, int *data);
+int  *list_pop_front(int *list);
+int  *list_pop_back(int *list);
 
-void readyqueue_push_front(int *list, int *process);
-void readyqueue_push_back(int *list, int *process);
+void list_insert_at(int *list, int index, int *data);
+int  *list_remove_at(int *list, int index);
+int  *list_get_entry_at(int *list, int index);
 
-int *readyqueue_pop_front(int *list);
-int *readyqueue_pop_back(int *list);
+int  *list_entry_get_next(int *entry);
+int  *list_entry_get_data(int *entry);
+void list_entry_set_next(int *entry, int *next);
+void list_entry_set_data(int *entry, int *data);
 
-void readyqueue_insert_at(int *list, int index, int *process);
-int  *readyqueue_remove_at(int *list, int index);
-int  *readyqueue_get_entry_at(int *list, int index);
+void list_swap(int *list, int index1, int index2);
+// Sorts list by the field at FIELD_NR
+void list_sort_by(int *list, int field_nr);
 
-int  *readyqueue_entry_get_next(int *entry);
-int  *readyqueue_entry_get_process(int *entry);
-// int  readyqueue_entry_get_pc(int *entry);
-// int  *readyqueue_entry_get_registers(int *entry);
-// int  *readyqueue_entry_get_memory(int *entry);
-
-//void readyqueue_entry_set_entry(int *entry, int *next, int pc, int *registers, int *memory);
-void readyqueue_entry_set_next(int *entry, int *next);
-void readyqueue_entry_set_process(int *entry, int *process);
-// void readyqueue_entry_set_pc(int *entry, int pc);
-// void readyqueue_entry_set_registers(int *entry, int *registers);
-// void readyqueue_entry_set_memory(int *entry, int *memory);
-
-void readyqueue_print(int *list);
-void readyqueue_test();
+void list_test();
 
 // -----------------------------------------------------------------
 // ---------------------------- PROCESS ----------------------------
 // -----------------------------------------------------------------
 
+int  *process_init(int id, int *registers, int *memory);
+
+int  process_get_id(int *process);
+int  process_get_pc(int *process);
+int  *process_get_registers(int *process);
+int  *process_get_memory(int *process);
+
+void process_set_id(int *process, int id);
+void process_set_pc(int *process, int pc);
+void process_set_registers(int *process, int *registers);
+void process_set_memory(int *process, int *memory);
+void print_process_list(int *list);
+
+
 // ------------------------ GLOBAL VARIABLES -----------------------
 
-int  *readyqueue;
-int  number_of_instances;
+int  *g_readyqueue;
+int  *g_running_process;
+int  g_ticks;
 
-// -----------------------------------------------------------------
-// ----------------------------- LIST ------------------------------
-// -----------------------------------------------------------------
-
-int  *listCreateNewEntry(int *head, int data);
-int  *listGetEntry(int index, int *head);
-int *listRemoveEntry(int *list, int index);
-
-int  *listGetNext(int *entry);
-int  listGetData(int *entry);
-
-void listSetNext(int *entry, int *next);
-void listSetData(int *entry, int data);
-
-int  listIsInBounds(int *list, int index);
-void listSwap(int *list, int index1, int index2);
-int  listSize(int *head);
-void listSort(int *list);
-
-void printList(int *list);
-
-void listTest();
+int  NUMBER_OF_INSTANCES;
+int  TIME_SLICE;
+int  MEMORY_SIZE;
 
 // -----------------------------------------------------------------
 // ------------------------- SYMBOL TABLE --------------------------
@@ -3966,6 +3957,7 @@ void fetch() {
 }
 
 void execute() {
+
     if (opcode == OP_SPECIAL) {
         if (function == FCT_NOP) {
             fct_nop();
@@ -4012,6 +4004,7 @@ void execute() {
 }
 
 void run() {
+    int *process;
 
     while (1) {
         fetch();
@@ -4019,6 +4012,14 @@ void run() {
         pre_debug();
         execute();
         post_debug();
+
+        // A1:
+        g_ticks = g_ticks + 1; 
+
+        if(pc % TIME_SLICE == 0) {
+            process = process_schedule();
+            process_switch(process);
+        }
     }
 }
 
@@ -4035,6 +4036,8 @@ int* parse_args(int argc, int *argv, int *cstar_argv) {
     int memorySize;
 
     memorySize = atoi((int*)*(cstar_argv+2)) * 1024 * 1024 / 4;
+    
+    MEMORY_SIZE = memorySize; // A1: Need to be known (for allocation purposes)
 
     allocateMachineMemory(memorySize*4);
 
@@ -4128,7 +4131,6 @@ void up_copyArguments(int argc, int *argv) {
 int main_emulator(int argc, int *argv, int *cstar_argv) {
     printString('e','m','u',10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
     initInterpreter();
-    //initReadyqueue(); // A1
 
     *(registers+REG_GP) = loadBinary(parse_args(argc, argv, cstar_argv));
 
@@ -4136,6 +4138,7 @@ int main_emulator(int argc, int *argv, int *cstar_argv) {
 
     up_copyArguments(argc-3, argv+3);
 
+    init_readyqueue(); // A1
     run();
 
     exit(0);
@@ -4145,26 +4148,63 @@ int main_emulator(int argc, int *argv, int *cstar_argv) {
 // -------------------------- ASSIGNMENT1 --------------------------
 // -----------------------------------------------------------------
 
-// void initReadyqueue() {
-//     int *new_registers;
-//     int *new_memory;
-//     int i;
+void init_readyqueue() {
+    int *process;
+    int *new_registers;
+    int *new_memory;
+    int i;
 
-//     i = 0;
-//     readyqueue = readyqueue_init();
-//     number_of_instances = 2; // TODO: Make dynamic
+    g_ticks = 0;
+    g_readyqueue = list_init();
+    NUMBER_OF_INSTANCES = 5; // TODO: Make dynamic
+    TIME_SLICE = 50; // TODO: Make dynamic
 
-//     while(i < number_of_instances) {
-//         printString('e','n','q','u','e','u','e',' ',0,0,0,0,0,0,0,0,0,0,0,0);
-//         printInt(i);
-//         printString('.',' ','i','n','t','o',' ',0,0,0,0,0,0,0,0,0,0,0,0,0);
-//         printString('r','e','a','d','y',' ','q','u','e','u','e',10,0,0,0,0,0,0,0,0);
-//         memcpy(registers, new_registers, 32); // 32 Registers
-//         memcpy(memory, new_memory, maxCodeLength);
-//         readyqueue_push_front(readyqueue, pc, new_registers, new_memory);
-//         i = i + 1;
-//     }
-// }
+    i = 0;
+    while(i < NUMBER_OF_INSTANCES) {
+        new_registers = memcpy(registers, new_registers, 32); // 32 Registers
+        new_memory = memcpy(memory, new_memory, MEMORY_SIZE);
+
+        if(i == 0) {
+            g_running_process = process_init(i, new_registers, new_memory);
+        } else {
+            process = process_init(i, new_registers, new_memory);
+            list_push_front(g_readyqueue, process);
+        }
+
+        i = i + 1;
+    }
+}
+
+// Returns the next process to run
+int *process_schedule() {
+    int *process;
+
+    if(list_is_empty(g_readyqueue) == 1)
+        return g_running_process;
+
+    process = list_entry_get_data(list_pop_back(g_readyqueue));
+
+    return process;
+}
+
+// Switches to PROCESS
+void process_switch(int *process) {
+
+    if(process == g_running_process)
+        return;
+
+    // Save the state of the current process
+    process_set_pc(g_running_process, pc);
+    process_set_registers(g_running_process, registers);
+    process_set_memory(g_running_process, memory);
+    list_push_front(g_readyqueue, g_running_process);
+
+    // Switch to PROCESS
+    pc = process_get_pc(process);
+    registers = process_get_registers(process);
+    memory = process_get_memory(process);
+    g_running_process = process;
+}
 
 // NUM ... Number of bytes
 int *memcpy(int *source, int *destination, int num) {
@@ -4177,7 +4217,6 @@ int *memcpy(int *source, int *destination, int num) {
         i = i + 1;
     }
 
-    printString('m','e','m','c','p','y',10,0,0,0,0,0,0,0,0,0,0,0,0,0);
     return destination;
 }
 
@@ -4186,130 +4225,111 @@ void printInt(int i) {
 }
 
 // -----------------------------------------------------------------
-// -------------------------- READY QUEUE --------------------------
+// ------------------------------ LIST -----------------------------
 // -----------------------------------------------------------------
 
-int *readyqueue_init() {
+int *list_init() {
     int *list;
     int size;
     int *head;
-    // readylist:
+    // list:
     // +----+------------+
     // |  0 | head       |
     // |  1 | size       |
     // +----+------------+
 
     list = (int*)malloc(2 * 4);
-    readyqueue_set_head(list, 0);
-    readyqueue_set_size(list, 0);
+    list_set_head(list, 0);
+    list_set_size(list, 0);
 
     return list;
 }
 
 // Getters
-int *readyqueue_get_head(int *list) {
+int *list_get_head(int *list) {
     return (int*)*list;
 }
 
-int readyqueue_get_size(int *list) {
+int list_get_size(int *list) {
     return *(list + 1);
 }
 
 // Setters
-void readyqueue_set_head(int *list, int *head) {
+void list_set_head(int *list, int *head) {
     *list = (int)head;
 }
 
-void readyqueue_set_size(int *list, int size) {
+void list_set_size(int *list, int size) {
     *(list + 1) = size;
 }
 
-// Inserts entry at HEAD
-void readyqueue_push_front(int *list, int *process) {
+// Inserts DATA at HEAD
+void list_push_front(int *list, int *data) {
     int *newEntry;
     int size;
     int *head;
 
-    // readylist entry:
+    // list entry:
     // +----+------------+
     // |  0 | ptr to next|
-    // |  1 | process    |
+    // |  1 | data       |
     // +----+------------+
 
-    head = readyqueue_get_head(list);
-    size = readyqueue_get_size(list);
+    head = list_get_head(list);
+    size = list_get_size(list);
     newEntry = (int*)malloc(2 * 4);
 
-    //readyqueue_entry_set_entry(newEntry, head, pc, registers, memory);
-    readyqueue_entry_set_next(newEntry, head);
-    readyqueue_entry_set_process(newEntry, process);
-    readyqueue_set_head(list, newEntry); // Set head to the newest entry;
-    readyqueue_set_size(list, size + 1);
+    list_entry_set_next(newEntry, head);
+    list_entry_set_data(newEntry, data);
+    list_set_head(list, newEntry); // Set head to the newest entry;
+    list_set_size(list, size + 1);
 }
 
-// Inserts entry at TAIL
-void readyqueue_push_back(int *list, int *process) {
-    int *newEntry;
-    int size;
-    int *tail;
-
-    size = readyqueue_get_size(list);
-    tail = readyqueue_get_entry_at(list, size - 1);
-    newEntry = (int*)malloc(2 * 4);
-
-    //readyqueue_entry_set_entry(newEntry, 0, pc, registers, memory);
-    readyqueue_entry_set_next(newEntry, 0);
-    readyqueue_entry_set_process(newEntry, process);
-    readyqueue_entry_set_next(tail, newEntry);
-    readyqueue_set_size(list, size + 1);
-}
-
-int *readyqueue_pop_front(int *list) {
+int *list_pop_front(int *list) {
     int *head;
 
-    head = readyqueue_remove_at(list, 0);
+    head = list_remove_at(list, 0);
 
     return head;
 }
 
-int *readyqueue_pop_back(int *list) {
+int *list_pop_back(int *list) {
     int size;
     int *head;
 
-    size = readyqueue_get_size(list);
-    head = readyqueue_remove_at(list, size - 1);
+    size = list_get_size(list);
+    head = list_remove_at(list, size - 1);
 
     return head;
 }
 
-void readyqueue_insert_at(int *list, int index, int *process) {
+void list_insert_at(int *list, int index, int *data) {
     int *newEntry;
     int size;
     int *prev;
     int *curr;
 
     // Check bounds
-    if(readyqueue_is_in_bounds(list, index) == 0)
+    if(list_is_in_bounds(list, index) == 0)
         return;
 
     if(index == 0) {
-        readyqueue_push_front(list, process);
+        list_push_front(list, data);
         return;
     }
 
-    size = readyqueue_get_size(list);
-    newEntry = (int*)malloc(4 * 4);
-    prev = readyqueue_get_entry_at(list, index - 1);
-    curr = readyqueue_entry_get_next(prev);
+    size = list_get_size(list);
+    newEntry = (int*)malloc(2 * 4);
+    prev = list_get_entry_at(list, index - 1);
+    curr = list_entry_get_next(prev);
 
-    readyqueue_entry_set_next(prev, newEntry);
-    //readyqueue_entry_set_entry(newEntry, curr, pc, registers, memory);
-    readyqueue_entry_set_next(newEntry, curr);
-    readyqueue_entry_set_process(newEntry, process);
-    readyqueue_set_size(list, size + 1);
+    list_entry_set_next(prev, newEntry);
+    list_entry_set_next(newEntry, curr);
+    list_entry_set_data(newEntry, data);
+    list_set_size(list, size + 1);
 }
 
-int *readyqueue_remove_at(int *list, int index) {
+int *list_remove_at(int *list, int index) {
     int *head;
     int *prev;
     int *entry;
@@ -4317,50 +4337,50 @@ int *readyqueue_remove_at(int *list, int index) {
     int size;
 
     // Check bounds
-    if(readyqueue_is_in_bounds(list, index) == 0)
-        return;
+    if(list_is_in_bounds(list, index) == 0)
+        return 0;
 
     // If it's the first index just change the head
     if(index == 0) {
-        head = readyqueue_get_head(list);
-        readyqueue_set_head(list, readyqueue_entry_get_next(head));
+        head = list_get_head(list);
+        list_set_head(list, list_entry_get_next(head));
         entry = head;
     } else {
-        prev = readyqueue_get_entry_at(list, index - 1);
-        entry = readyqueue_entry_get_next(prev);
-        next = readyqueue_entry_get_next(entry);
-        readyqueue_entry_set_next(prev, next);
+        prev = list_get_entry_at(list, index - 1);
+        entry = list_entry_get_next(prev);
+        next = list_entry_get_next(entry);
+        list_entry_set_next(prev, next);
     }
 
-    size = readyqueue_get_size(list);
-    readyqueue_set_size(list, size - 1);
+    size = list_get_size(list);
+    list_set_size(list, size - 1);
 
     return entry;
 }
 
-int *readyqueue_get_entry_at(int *list, int index) {
+int *list_get_entry_at(int *list, int index) {
     int i;
     int size;
     int *head;
 
     i = 0;
-    size = readyqueue_get_size(list);
-    head = readyqueue_get_head(list);
+    size = list_get_size(list);
+    head = list_get_head(list);
 
     while(i < size) {
         if(i == index)
             return head;
-        head = readyqueue_entry_get_next(head);
+        head = list_entry_get_next(head);
         i = i + 1;
     }
 
     return 0;
 }
 
-int readyqueue_is_in_bounds(int *list, int index) {
+int list_is_in_bounds(int *list, int index) {
     int size;
 
-    size = readyqueue_get_size(list);
+    size = list_get_size(list);
     if(index < 0)
         return 0;
     else if(size <= index)
@@ -4368,338 +4388,274 @@ int readyqueue_is_in_bounds(int *list, int index) {
     return 1;
 }
 
-// Entry
-// Getters
-int *readyqueue_entry_get_next(int *entry) {
-    return (int*)*entry;
-}
-
-int *readyqueue_entry_get_process(int *entry) {
-    return (int*)(*entry + 1);
-}
-
-// int readyqueue_entry_get_pc(int *entry) {
-//     return *(entry + 1);
-// }
-
-// int *readyqueue_entry_get_registers(int *entry) {
-//     return (int*)*(entry + 2);
-// }
-
-// int *readyqueue_entry_get_memory(int *entry) {
-//     return (int*)*(entry + 3);
-// }
-
-// Setters
-// void readyqueue_entry_set_entry(int *entry, int *next, int pc, int *registers, int *memory) {
-//     readyqueue_entry_set_pc(entry, pc);
-//     readyqueue_entry_set_registers(entry, registers);
-//     readyqueue_entry_set_memory(entry, memory);
-//     readyqueue_entry_set_next(entry, next);
-// }
-
-void readyqueue_entry_set_next(int *entry, int *next) {
-    *entry = (int)next;
-}
-
-void readyqueue_entry_set_process(int *entry, int *process) {
-    *(entry + 1) = (int)process;
-}
-
-// void readyqueue_entry_set_pc(int *entry, int pc) {
-//     *(entry + 1) = pc;
-// }
-
-// void readyqueue_entry_set_registers(int *entry, int *registers) {
-//     *(entry + 2) = (int)registers;
-// }
-
-// void readyqueue_entry_set_memory(int *entry, int *memory) {
-//     *(entry + 3) = (int)memory;
-// }
-
-// Misc
-// void readyqueue_print(int *list) {
-//     int i;
-//     int size;
-//     int data;
-
-//     i = 0;
-//     size = readyqueue_get_size(list);
-
-//     putchar('[');
-//     putchar(' ');
-//     while(i < size) {
-//         data = (int)readyqueue_entry_get_process(readyqueue_get_entry_at(list, i));
-//         print(itoa(data, string_buffer, 10, 0));
-//         putchar(' ');
-//         i = i + 1;
-//     }
-//     putchar(']');
-//     putchar(10); // Linefeed
-// }
-
-// -----------------------------------------------------------------
-// ----------------------------- LIST ------------------------------
-// -----------------------------------------------------------------
-
-int *listCreateNewEntry(int *head, int data) {
-    int *newEntry;
-
-    // list:
-    // +----+------------+
-    // |  0 | ptr to next|
-    // |  1 | data       | 
-    // +----+------------+
-    newEntry = (int*)malloc(2 * 4);
-    listSetData(newEntry, data);
-    listSetNext(newEntry, head);
-    head = newEntry;
-
-    return head;
-}
-
-int *listRemoveEntry(int *list, int index) {
-    int *prev;
-    int *curr;
-    int *next;
-
-    if(listIsInBounds(list, index) == 0)
-        return list;
-
-    if(index == 0)
-        list = listGetNext(list);
-    else {
-        prev = listGetEntry(index - 1, list);
-        curr = listGetNext(prev);
-        next = listGetNext(curr);
-        listSetNext(prev, next);
-    }
-
-    return list;
-}
-
-int *listGetEntry(int index, int *head) {
-    int i;
-    i = 0;
-
-    while((int)head != 0) {
-        if(i == index)
-            return head;
-        else
-            head = listGetNext(head);
-        i = i + 1;
-    }
-
-    return 0;
-}
-
-int *listGetNext(int *entry) {
-    return (int*) *entry;
-}
-
-int listGetData(int *entry) {
-    return *(entry + 1);
-}
-
-void listSetNext(int *entry, int *next) {
-    *entry = (int)next;
-}
-
-void listSetData(int *entry, int data) {
-    *(entry + 1) = data;
-}
-
-int listIsInBounds(int *list, int index) {
-    if(index >= listSize(list))
-        return 0;
-    if(index < 0)
-        return 0;
-    return 1;
-}
-
-int listSize(int *head) {
+int list_is_empty(int *list) {
     int size;
-    size = 0;
 
-    while((int)head != 0) {
-        size = size + 1;
-        head = listGetNext(head);
-    }
+    size = list_get_size(list);
 
-    return size;
+    return size == 0;
 }
 
-void printList(int *list) {
-    int i;
-    int size;
-    int data;
-
-    i = 0;
-    size = listSize(list);
-
-    putchar('[');
-    putchar(' ');
-    while(i < size) {
-        data = listGetData(listGetEntry(i, list));
-        print(itoa(data, string_buffer, 10, 0));
-        putchar(' ');
-        i = i + 1;
-    }
-    putchar(']');
-    putchar(10); // Linefeed
-}
-
-void listSwap(int *list, int index1, int index2) {
+void list_swap(int *list, int index1, int index2) {
     int *entry1;
     int *entry2;
-    int data1;
-    int data2;
+    int *data1;
+    int *data2;
 
-    entry1 = listGetEntry(index1, list);
-    entry2 = listGetEntry(index2, list);
-    data1 = listGetData(entry1);
-    data2 = listGetData(entry2);
+    if(list_is_in_bounds(list, index1) == 0)
+        return;
+    if(list_is_in_bounds(list, index2) == 0)
+        return;
 
-    listSetData(entry1, data2);
-    listSetData(entry2, data1);
+    entry1 = list_get_entry_at(list, index1);
+    entry2 = list_get_entry_at(list, index2);
+    data1 = list_entry_get_data(entry1);
+    data2 = list_entry_get_data(entry2);
+
+    list_entry_set_data(entry1, data2);
+    list_entry_set_data(entry2, data1);
 }
 
-void listSort(int *list) {
+// Sorts list by the field at FIELD_NR
+void list_sort_by(int *list, int field_nr) {
     int i;
     int j;
     int size;
     int l;
     int r;
 
-    j = 0;
-    size = listSize(list);
+    size = list_get_size(list);
     i = size;
-
     while(i > 1) {
         j = 0;
         while(j < size - 1) {
-            l = listGetData(listGetEntry(j, list));
-            r = listGetData(listGetEntry(j + 1, list));
+            l = *(list_entry_get_data(list_get_entry_at(list, j)) + field_nr);
+            r = *(list_entry_get_data(list_get_entry_at(list, j + 1)) + field_nr);
             if(l > r)
-                listSwap(list, j, j + 1);
+                list_swap(list, j, j + 1);
             j = j + 1;
         }
         i = i - 1;
     }
 }
 
+// Entry
+// Getters
+int *list_entry_get_next(int *entry) {
+    return (int*)*entry;
+}
+
+int *list_entry_get_data(int *entry) {
+    return (int*)*(entry + 1);
+}
+
+// Setters
+void list_entry_set_next(int *entry, int *next) {
+    *entry = (int)next;
+}
+
+void list_entry_set_data(int *entry, int *data) {
+    *(entry + 1) = (int)data;
+}
+
+// -----------------------------------------------------------------
+// ---------------------------- PROCESS ----------------------------
+// -----------------------------------------------------------------
+
+int *process_init(int id, int *registers, int *memory) {
+    int *process;
+
+    // process:
+    // +----+------------+
+    // |  0 | id         |
+    // |  1 | pc         |
+    // |  2 | registers  |
+    // |  3 | memory     |
+    // +----+------------+
+
+    process = (int*)malloc(4 * 4);
+    process_set_id(process, id);
+    process_set_pc(process, 0); // Initially always 0
+    process_set_registers(process, registers);
+    process_set_memory(process, memory);
+
+    return process;
+}
+
+int process_get_id(int *process) {
+    return *process;
+}
+
+int process_get_pc(int *process) {
+    return *(process + 1);
+}
+
+int *process_get_registers(int *process) {
+    return (int*)*(process + 2);
+}
+
+int *process_get_memory(int *process) {
+    return (int*)*(process + 3);
+}
+
+void process_set_id(int *process, int id) {
+    *process = id;
+}
+
+void process_set_pc(int *process, int pc) {
+    *(process + 1) = pc;
+}
+
+void process_set_registers(int *process, int *registers) {
+    *(process + 2) = (int)registers;
+}
+
+void process_set_memory(int *process, int *memory) {
+    *(process + 3) = (int)memory;
+}
+
+void print_process_list(int *list) {
+    int i;
+    int size;
+    int *process;
+    int id;
+
+    i = 0;
+    size = list_get_size(list);
+
+    putchar('[');
+    while(i < size) {
+        process = list_entry_get_data(list_get_entry_at(list, i));
+        id = process_get_id(process);
+        printInt(id);
+        if(i != size - 1) {
+            putchar(',');
+            putchar(' ');
+        }
+        i = i + 1;
+    }
+    putchar(']');
+    putchar(10); // Linefeed
+}
+
 // -----------------------------------------------------------------
 // ---------------------------- TESTS ------------------------------
 // -----------------------------------------------------------------
 
-void readylist_test() {
+void list_test() {
     int *list;
     int *entry;
+    int *process;
+    int id;
+
     printString('r','e','a','d','y',' ','l','i','s','t',' ','t','e','s','t',10,0,0,0,0);
 
-    list = readyqueue_init();
-    // readyqueue_push_front(list, 111);
-    // readyqueue_push_front(list, 222);
-    // readyqueue_push_front(list, 333);
-    // readyqueue_push_front(list, 444);
-    // readyqueue_print(list);
+    list = list_init();
+    process = process_init(111, registers, memory);
+    list_push_front(list, process);
+    print_process_list(list);
+    list_pop_front(list);
+    list_pop_back(list);
+    list_pop_front(list);
+    print_process_list(list);
 
-    // printString('i','n','s','e','r','t',' ','a','t',' ','0',10,0,0,0,0,0,0,0,0);
-    // readyqueue_insert_at(list, 0, 100);
-    // readyqueue_print(list);
+    process = process_init(222, registers, memory);
+    list_push_front(list, process);
+    print_process_list(list);
 
-    // printString('i','n','s','e','r','t',' ','a','t',' ','3',10,0,0,0,0,0,0,0,0);
-    // readyqueue_insert_at(list, 3, 333);
-    // readyqueue_print(list);
+    process = process_init(333, registers, memory);
+    list_push_front(list, process);
+    print_process_list(list);
 
-    // printString('r','e','m','o','v','e',' ','a','t',' ','3',10,0,0,0,0,0,0,0,0);
-    // readyqueue_remove_at(list, 3);
-    // readyqueue_print(list);
+    process = process_init(444, registers, memory);
+    list_push_front(list, process);
+    print_process_list(list);
 
-    // printString('r','e','m','o','v','e',' ','a','t',' ','0',10,'e','l','=',0,0,0,0,0);
-    // entry = readyqueue_remove_at(list, 0);
-    // print(itoa(readyqueue_entry_get_process(entry), string_buffer, 10, 0));
-    // putchar(10);
-    // readyqueue_print(list);
+    process = process_init(555, registers, memory);
+    list_push_front(list, process);
+    print_process_list(list);
+    list_pop_back(list);
+    print_process_list(list);
 
-    // printString('r','e','m','o','v','e',' ','a','t',' ','-','1',10,0,0,0,0,0,0,0);
-    // readyqueue_remove_at(list, -1);
-    // readyqueue_print(list);
+    process = process_init(666, registers, memory);
+    list_insert_at(list, 2, process);
+    print_process_list(list);
 
-    // printString('r','e','m','o','v','e',' ','a','t',' ','1',10,'e','l','=',0,0,0,0,0);
-    // entry = readyqueue_remove_at(list, 1);
-    // print(itoa(readyqueue_entry_get_process(entry), string_buffer, 10, 0));
-    // putchar(10);
-    // readyqueue_print(list);
+    process = process_init(777, registers, memory);
+    list_insert_at(list, 0, process);
+    print_process_list(list);
+    list_sort_by(list, 0);
+    print_process_list(list);
 
-    // printString('r','e','m','o','v','e',' ','a','t',' ','1',10,'e','l','=',0,0,0,0,0);
-    // entry = readyqueue_remove_at(list, 1);
-    // print(itoa(readyqueue_entry_get_process(entry), string_buffer, 10, 0));
-    // putchar(10);
-    // readyqueue_print(list);
+    process = process_init(888, registers, memory);
+    list_insert_at(list, -1, process);
+    print_process_list(list);
+    list_swap(list, 0, 4);
+    print_process_list(list);
 
-    // printString('p','u','s','h','_','b','a','c','k',10,0,0,0,0,0,0,0,0,0,0);
-    // readyqueue_push_back(list, 999);
-    // readyqueue_print(list);
+    list_remove_at(list, 3);
+    print_process_list(list);
 
-    // printString('p','o','p','_','b','a','c','k',10,'e','l','=',0,0,0,0,0,0,0,0);
-    // entry = readyqueue_pop_back(list);
-    // print(itoa(readyqueue_entry_get_process(entry), string_buffer, 10, 0));
-    // putchar(10);
-    // readyqueue_print(list);
+    list_remove_at(list, 0);
+    print_process_list(list);
 
-    // printString('p','o','p','_','f','r','o','n','t',10,'e','l','=',0,0,0,0,0,0,0);
-    // entry = readyqueue_pop_front(list);
-    // print(itoa(readyqueue_entry_get_process(entry), string_buffer, 10, 0));
-    // putchar(10);
-    // readyqueue_print(list);
+    list_remove_at(list, 2);
+    print_process_list(list);
+
+    list_remove_at(list, 3);
+    print_process_list(list);
+
+    list_remove_at(list, 0);
+    print_process_list(list);
+
+    list_pop_back(list);
+    print_process_list(list);
 }
 
-void listTest() {
-    int *list1;
-    int *list2;
-    int data;
+// void listTest() {
+//     int *list1;
+//     int *list2;
+//     int data;
 
-    printString('l','i','s','t',' ','t','e','s','t',10,0,0,0,0,0,0,0,0,0,0);
-    list1 = 0;
-    list1 = listCreateNewEntry(list1, 4);
-    list1 = listCreateNewEntry(list1, 2);
-    list1 = listCreateNewEntry(list1, 5);
-    list1 = listCreateNewEntry(list1, 3);
-    list1 = listCreateNewEntry(list1, 1);
-    list1 = listCreateNewEntry(list1, 6);
-    printList(list1);
+//     printString('l','i','s','t',' ','t','e','s','t',10,0,0,0,0,0,0,0,0,0,0);
+//     list1 = 0;
+//     list1 = listCreateNewEntry(list1, 4);
+//     list1 = listCreateNewEntry(list1, 2);
+//     list1 = listCreateNewEntry(list1, 5);
+//     list1 = listCreateNewEntry(list1, 3);
+//     list1 = listCreateNewEntry(list1, 1);
+//     list1 = listCreateNewEntry(list1, 6);
+//     printList(list1);
 
-    list1 = listRemoveEntry(list1, 5);
-    printList(list1);
-    list1 = listRemoveEntry(list1, 0);
-    printList(list1);
-    list1 = listRemoveEntry(list1, -1);
-    printList(list1);
-    list1 = listRemoveEntry(list1, 10);
-    printList(list1);
+//     list1 = listRemoveEntry(list1, 5);
+//     printList(list1);
+//     list1 = listRemoveEntry(list1, 0);
+//     printList(list1);
+//     list1 = listRemoveEntry(list1, -1);
+//     printList(list1);
+//     list1 = listRemoveEntry(list1, 10);
+//     printList(list1);
     
-    listSort(list1);
-    printList(list1);
+//     listSort(list1);
+//     printList(list1);
 
-    list2 = 0;
-    list2 = listCreateNewEntry(list2, 965);
-    list2 = listCreateNewEntry(list2, 1220);
-    list2 = listCreateNewEntry(list2, 12);
-    list2 = listCreateNewEntry(list2, 3);
-    list2 = listCreateNewEntry(list2, 42);
-    list2 = listCreateNewEntry(list2, 6);
-    list2 = listCreateNewEntry(list2, 12);
-    list2 = listCreateNewEntry(list2, 91);
-    list2 = listCreateNewEntry(list2, 7);
-    list2 = listCreateNewEntry(list2, 12);
-    list2 = listCreateNewEntry(list2, 71);
-    list2 = listCreateNewEntry(list2, 232);
-    printList(list2);
-    listSort(list2);
-    printList(list2);
-}
+//     list2 = 0;
+//     list2 = listCreateNewEntry(list2, 965);
+//     list2 = listCreateNewEntry(list2, 1220);
+//     list2 = listCreateNewEntry(list2, 12);
+//     list2 = listCreateNewEntry(list2, 3);
+//     list2 = listCreateNewEntry(list2, 42);
+//     list2 = listCreateNewEntry(list2, 6);
+//     list2 = listCreateNewEntry(list2, 12);
+//     list2 = listCreateNewEntry(list2, 91);
+//     list2 = listCreateNewEntry(list2, 7);
+//     list2 = listCreateNewEntry(list2, 12);
+//     list2 = listCreateNewEntry(list2, 71);
+//     list2 = listCreateNewEntry(list2, 232);
+//     printList(list2);
+//     listSort(list2);
+//     printList(list2);
+// }
 
 // -----------------------------------------------------------------
 // ----------------------------- MAIN ------------------------------
@@ -4772,8 +4728,7 @@ int main(int argc, int *argv) {
                     exit(-1);
             }
             else if (*(firstParameter+1) == 't') {
-                listTest();
-                readylist_test();
+                list_test();
             }
             else {
                 exit(-1);
