@@ -705,11 +705,12 @@ void initDecoder() {
 // ---------------------------- MEMORY -----------------------------
 // -----------------------------------------------------------------
 
-void allocateMachineMemory(int size);
+void initMemory(int size);
 
 // ------------------------ GLOBAL VARIABLES -----------------------
 
 int *memory; // machine memory
+int memorySize; // size of machine memory in bytes
 
 // -----------------------------------------------------------------
 // ---------------------------- BINARY -----------------------------
@@ -821,7 +822,8 @@ void execute();
 void run();
 
 void debug_boot(int memorySize);
-int* parse_args(int argc, int *argv, int *cstar_argv);
+int* parse_args_executable_name(int argc, int *argv, int *cstar_argv);
+int parse_args_memory_size(int argc, int *argv, int *cstar_argv);
 void up_push(int value);
 int  up_malloc(int size);
 int  up_copyCString(int *s);
@@ -2831,8 +2833,7 @@ int main_compiler() {
     initScanner();
     initSymbolTable();
     initParser();
-
-    allocateMachineMemory(maxCodeLength*4);
+    initMemory(maxCodeLength*4);
 
     getSymbol();
 
@@ -3018,8 +3019,9 @@ void decodeJFormat() {
 // ---------------------------- MEMORY -----------------------------
 // -----------------------------------------------------------------
 
-void allocateMachineMemory(int size) {
+void initMemory(int size) {
     memory = (int*)malloc(size);
+    memorySize = size;
 }
 
 // -----------------------------------------------------------------
@@ -3941,6 +3943,7 @@ void run() {
     }
 }
 
+// TODO: proper boot debugging support
 void debug_boot(int memorySize) {
     printString('m','e','m',' ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
 
@@ -3949,21 +3952,18 @@ void debug_boot(int memorySize) {
     printString('M','B',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
 }
 
-int* parse_args(int argc, int *argv, int *cstar_argv) {
+// TODO: consolidate argument parsing
+int* parse_args_executable_name(int argc, int *argv, int *cstar_argv) {
     // assert: ./selfie -m size executable {-m size executable}
-    int memorySize;
-
-    memorySize = atoi((int*)*(cstar_argv+2)) * 1024 * 1024 / 4;
-
-    allocateMachineMemory(memorySize*4);
-
-    // initialize stack pointer
-    *(registers+REG_SP) = (memorySize - 1) * 4;
-
-    debug_boot(memorySize);
-
     // return executable file name
     return (int*)*(argv+3);
+}
+
+int parse_args_memory_size(int argc, int *argv, int *cstar_argv) {
+    // assert: ./selfie -m size executable {-m size executable}
+    int sz;
+    sz = atoi((int*)*(cstar_argv+2)) * 1024 * 1024;
+    return sz;
 }
 
 void up_push(int value) {
@@ -4045,10 +4045,17 @@ void up_copyArguments(int argc, int *argv) {
 }
 
 int main_emulator(int argc, int *argv, int *cstar_argv) {
+    int *binaryName;
+    int memSize;
+    
     initInterpreter();
-
-    *(registers+REG_GP) = loadBinary(parse_args(argc, argv, cstar_argv));
-
+    binaryName = parse_args_executable_name(argc, argv, cstar_argv);
+    memSize = parse_args_memory_size(argc, argv, cstar_argv);
+    initMemory(memSize);
+    
+    //set up registers
+    *(registers+REG_SP) = memorySize - 4;
+    *(registers+REG_GP) = loadBinary(binaryName);
     *(registers+REG_K1) = *(registers+REG_GP);
 
     up_copyArguments(argc-3, argv+3);
@@ -4107,14 +4114,12 @@ int* copyC2CStarArguments(int argc, int *argv) {
 int main(int argc, int *argv) {
     int *cstar_argv;
     int *firstParameter;
-
+    
     initLibrary();
-
+    cstar_argv = copyC2CStarArguments(argc, argv);
     initRegister();
     initDecoder();
     initSyscalls();
-
-    cstar_argv = copyC2CStarArguments(argc, argv);
 
     if (argc > 1) {
         firstParameter = (int*) (*(cstar_argv+1));
