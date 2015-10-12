@@ -430,9 +430,16 @@ void initScanner () {
 // NUM ... Number of bytes, returns destination
 int  *memcpy(int *source, int *destination, int num);
 void printInt(int i);
+int int_length(int i);
 void init_readyqueue();
 int  *process_schedule();
 void process_switch(int *process);
+
+// -----------------------------------------------------------------
+// ----------------------------- DEBUG -----------------------------
+// -----------------------------------------------------------------
+
+int DEBUG_1; // Debug first assignment
 
 // -----------------------------------------------------------------
 // ------------------------------ LIST -----------------------------
@@ -3958,6 +3965,47 @@ void fetch() {
 
 void execute() {
 
+    // Debug code for the first assignment
+    int i;
+    if(DEBUG_1) {
+        printInt(g_ticks);
+
+        i = 0;
+        while(i < (10 - int_length(g_ticks))) {
+            putchar(' ');
+            i = i + 1;
+        }
+        printString(' ','|','|',' ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+        printInt(pc);
+
+        i = 0;
+        while(i < (8 - int_length(pc))) {
+            putchar(' ');
+            i = i + 1;
+        }
+        printString(' ','|','|',' ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+        printInt(opcode);
+
+        i = 0;
+        while(i < (4 - int_length(opcode))) {
+            putchar(' ');
+            i = i + 1;
+        }
+        printString(' ','|','|',' ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+
+        // Print the registers
+        i = 0;
+        while(i < 32) {
+            printInt(*(registers+i));
+            putchar(' ');
+            i = i + 1;
+        }
+
+        printString(' ','|','|',' ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+        printInt(ir);
+        putchar(10);
+    }
+
     if (opcode == OP_SPECIAL) {
         if (function == FCT_NOP) {
             fct_nop();
@@ -4016,7 +4064,7 @@ void run() {
         // A1:
         g_ticks = g_ticks + 1; 
 
-        if(pc % TIME_SLICE == 0) {
+        if(g_ticks % TIME_SLICE == 0) {
             process = process_schedule();
             process_switch(process);
         }
@@ -4129,7 +4177,6 @@ void up_copyArguments(int argc, int *argv) {
 }
 
 int main_emulator(int argc, int *argv, int *cstar_argv) {
-    printString('e','m','u',10,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
     initInterpreter();
 
     *(registers+REG_GP) = loadBinary(parse_args(argc, argv, cstar_argv));
@@ -4153,11 +4200,13 @@ void init_readyqueue() {
     int *new_registers;
     int *new_memory;
     int i;
+    // DEBUG
+    int j;
 
     g_ticks = 0;
     g_readyqueue = list_init();
-    NUMBER_OF_INSTANCES = 5; // TODO: Make dynamic
-    TIME_SLICE = 50; // TODO: Make dynamic
+    NUMBER_OF_INSTANCES = 2; // TODO: Make dynamic
+    TIME_SLICE = 40; // TODO: Make dynamic
 
     i = 0;
     while(i < NUMBER_OF_INSTANCES) {
@@ -4179,10 +4228,25 @@ void init_readyqueue() {
 int *process_schedule() {
     int *process;
 
-    if(list_is_empty(g_readyqueue) == 1)
+    if(list_is_empty(g_readyqueue) == 1) {
+        if(DEBUG_1) {
+            printString('/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/',10);
+            printString('c','o','n','t','i','n','u','e',' ','w','i','t','h',' ',0,0,0,0,0,0);
+            printString('r','u','n','n','i','n','g',' ','p','r','o','c','e','s','s',10,0,0,0,0);
+            printString('/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/',10);
+        }
         return g_running_process;
+    }
 
     process = list_entry_get_data(list_pop_back(g_readyqueue));
+
+    if(DEBUG_1) {
+        printString('/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/',10);
+        printString('n','e','x','t',' ','p','r','o','c','e','s','s',' ','t','o',' ','r','u','n',' ');
+        printInt(process_get_id(process));
+        putchar(10);
+        printString('/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/',10);
+    }
 
     return process;
 }
@@ -4222,6 +4286,26 @@ int *memcpy(int *source, int *destination, int num) {
 
 void printInt(int i) {
     print(itoa(i, string_buffer, 10, 0));
+}
+
+int int_length(int i) {
+    int j;
+    int length;
+
+    if(i == 0)
+        return 1;
+    
+    if(i < 0)
+        i = (-1)*i;
+
+    j = 1;
+    length = 0;
+    while(i > j - 1) {
+        j = j * 10;
+        length = length + 1;
+    }
+
+    return length;
 }
 
 // -----------------------------------------------------------------
@@ -4612,51 +4696,6 @@ void list_test() {
     print_process_list(list);
 }
 
-// void listTest() {
-//     int *list1;
-//     int *list2;
-//     int data;
-
-//     printString('l','i','s','t',' ','t','e','s','t',10,0,0,0,0,0,0,0,0,0,0);
-//     list1 = 0;
-//     list1 = listCreateNewEntry(list1, 4);
-//     list1 = listCreateNewEntry(list1, 2);
-//     list1 = listCreateNewEntry(list1, 5);
-//     list1 = listCreateNewEntry(list1, 3);
-//     list1 = listCreateNewEntry(list1, 1);
-//     list1 = listCreateNewEntry(list1, 6);
-//     printList(list1);
-
-//     list1 = listRemoveEntry(list1, 5);
-//     printList(list1);
-//     list1 = listRemoveEntry(list1, 0);
-//     printList(list1);
-//     list1 = listRemoveEntry(list1, -1);
-//     printList(list1);
-//     list1 = listRemoveEntry(list1, 10);
-//     printList(list1);
-    
-//     listSort(list1);
-//     printList(list1);
-
-//     list2 = 0;
-//     list2 = listCreateNewEntry(list2, 965);
-//     list2 = listCreateNewEntry(list2, 1220);
-//     list2 = listCreateNewEntry(list2, 12);
-//     list2 = listCreateNewEntry(list2, 3);
-//     list2 = listCreateNewEntry(list2, 42);
-//     list2 = listCreateNewEntry(list2, 6);
-//     list2 = listCreateNewEntry(list2, 12);
-//     list2 = listCreateNewEntry(list2, 91);
-//     list2 = listCreateNewEntry(list2, 7);
-//     list2 = listCreateNewEntry(list2, 12);
-//     list2 = listCreateNewEntry(list2, 71);
-//     list2 = listCreateNewEntry(list2, 232);
-//     printList(list2);
-//     listSort(list2);
-//     printList(list2);
-// }
-
 // -----------------------------------------------------------------
 // ----------------------------- MAIN ------------------------------
 // -----------------------------------------------------------------
@@ -4708,12 +4747,13 @@ int main(int argc, int *argv) {
     int *firstParameter;
 
     initLibrary();
-
     initRegister();
     initDecoder();
     initSyscalls();
 
     cstar_argv = copyC2CStarArguments(argc, argv);
+
+    DEBUG_1 = 1; // Debug assignment 1
 
     if (argc > 1) {
         firstParameter = (int*) (*(cstar_argv+1));
