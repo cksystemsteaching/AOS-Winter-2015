@@ -1,5 +1,5 @@
 Home Work Flow
-==============
+--------------
 
 * Step 0: form a team of 2-3 members
 * Step 1: get a github account (for each member)
