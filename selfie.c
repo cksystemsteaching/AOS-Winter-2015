@@ -428,7 +428,7 @@ void initScanner () {
 // -----------------------------------------------------------------
 
 // NUM ... Number of bytes, returns destination
-int  *memcpy(int *source, int *destination, int num);
+int  *memcpy(int *source, int num);
 void printInt(int i);
 int int_length(int i);
 void init_readyqueue();
@@ -4200,23 +4200,21 @@ void init_readyqueue() {
     int *new_registers;
     int *new_memory;
     int i;
-    // DEBUG
-    int j;
 
     g_ticks = 0;
     g_readyqueue = list_init();
-    NUMBER_OF_INSTANCES = 2; // TODO: Make dynamic
-    TIME_SLICE = 40; // TODO: Make dynamic
+    NUMBER_OF_INSTANCES = 1; // TODO: Make dynamic
+    TIME_SLICE = 2; // TODO: Make dynamic
 
     i = 0;
     while(i < NUMBER_OF_INSTANCES) {
-        new_registers = memcpy(registers, new_registers, 32); // 32 Registers
-        new_memory = memcpy(memory, new_memory, MEMORY_SIZE);
+        new_registers = memcpy(registers, 32); // 32 Registers
+        //new_memory = memcpy(memory, MEMORY_SIZE);
 
         if(i == 0) {
-            g_running_process = process_init(i, new_registers, new_memory);
+            g_running_process = process_init(i, new_registers, memory);
         } else {
-            process = process_init(i, new_registers, new_memory);
+            process = process_init(i, new_registers, memory);
             list_push_front(g_readyqueue, process);
         }
 
@@ -4233,7 +4231,6 @@ int *process_schedule() {
             printString('/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/',10);
             printString('c','o','n','t','i','n','u','e',' ','w','i','t','h',' ',0,0,0,0,0,0);
             printString('r','u','n','n','i','n','g',' ','p','r','o','c','e','s','s',10,0,0,0,0);
-            printString('/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/',10);
         }
         return g_running_process;
     }
@@ -4245,7 +4242,6 @@ int *process_schedule() {
         printString('n','e','x','t',' ','p','r','o','c','e','s','s',' ','t','o',' ','r','u','n',' ');
         printInt(process_get_id(process));
         putchar(10);
-        printString('/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/',10);
     }
 
     return process;
@@ -4260,28 +4256,56 @@ void process_switch(int *process) {
     // Save the state of the current process
     process_set_pc(g_running_process, pc);
     process_set_registers(g_running_process, registers);
-    process_set_memory(g_running_process, memory);
+    //process_set_memory(g_running_process, memory);
     list_push_front(g_readyqueue, g_running_process);
+
+    if(DEBUG_1) {
+        printString('s','a','v','e',' ','p','r','o','c','e','s','s',' ',0,0,0,0,0,0,0);
+        printInt(process_get_id(g_running_process));
+        putchar(' ');
+        printInt(process_get_pc(g_running_process));
+        putchar(' ');
+        printInt(process_get_registers(g_running_process));
+        putchar(' ');
+        printInt(process_get_memory(g_running_process));
+        putchar(' ');
+        putchar(10);
+    }
 
     // Switch to PROCESS
     pc = process_get_pc(process);
     registers = process_get_registers(process);
     memory = process_get_memory(process);
     g_running_process = process;
+
+    if(DEBUG_1) {
+        printString('r','e','s','t','o','r','e',' ','p','r','o','c','e','s','s',' ',0,0,0,0);
+        printInt(process_get_id(g_running_process));
+        putchar(' ');
+        printInt(process_get_pc(g_running_process));
+        putchar(' ');
+        printInt(process_get_registers(g_running_process));
+        putchar(' ');
+        printInt(process_get_memory(g_running_process));
+        putchar(' ');
+        putchar(10);
+        printString('/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/',10);
+    }
 }
 
 // NUM ... Number of bytes
-int *memcpy(int *source, int *destination, int num) {
+int *memcpy(int *source, int num) {
     int i;
+    int *dest;
 
     i = 0;
-    destination = (int*)malloc(num * 4);
+    dest = (int*)malloc(num * 4);
     while(i < num) {
-        *(destination + i) = *(source + i);
+        *(dest + i) = *(source + i);
         i = i + 1;
     }
 
-    return destination;
+    return dest;
 }
 
 void printInt(int i) {
@@ -4753,7 +4777,7 @@ int main(int argc, int *argv) {
 
     cstar_argv = copyC2CStarArguments(argc, argv);
 
-    DEBUG_1 = 1; // Debug assignment 1
+    DEBUG_1 = 0; // Debug assignment 1
 
     if (argc > 1) {
         firstParameter = (int*) (*(cstar_argv+1));
