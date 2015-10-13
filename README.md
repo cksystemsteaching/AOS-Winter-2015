@@ -1,10 +1,4 @@
-AOS-Winter-2015
-===============
-
-Advanced Operating Systems 2015
-
-
-Home work flow
+Home Work Flow
 ==============
 
 * Step 0: form a team of 2-3 members
@@ -16,8 +10,8 @@ Home work flow
 * Step 6: send a pull request containing your solution via github.com to [cksystemsteaching/AOS-Winter-2015/tree/selfie-master](https://github.com/cksystemsteaching/AOS-Winter-2015/tree/selfie-master)
 
 
-Assignment 0
-------------
+Assignment 0: Basic data structures
+-----------------------------------
 
 Review [linked lists](https://en.wikipedia.org/wiki/Linked_list) and implement a simple program using a singly linked list in C*. The minimal requirements are as follows:
 
