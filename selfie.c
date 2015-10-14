@@ -424,24 +424,6 @@ void initScanner () {
 }
 
 // -----------------------------------------------------------------
-// -------------------------- ASSIGNMENT1 --------------------------
-// -----------------------------------------------------------------
-
-// NUM ... Number of bytes, returns destination
-int  *memcpy(int *source, int num);
-void printInt(int i);
-int int_length(int i);
-void init_readyqueue();
-int  *process_schedule();
-void process_switch(int *process);
-
-// -----------------------------------------------------------------
-// ----------------------------- DEBUG -----------------------------
-// -----------------------------------------------------------------
-
-int DEBUG_1; // Debug first assignment
-
-// -----------------------------------------------------------------
 // ------------------------------ LIST -----------------------------
 // -----------------------------------------------------------------
 
@@ -491,16 +473,7 @@ void process_set_registers(int *process, int *registers);
 void process_set_memory(int *process, int *memory);
 void print_process_list(int *list);
 
-
-// ------------------------ GLOBAL VARIABLES -----------------------
-
-int  *g_readyqueue;
-int  *g_running_process;
-int  g_ticks;
-
-int  NUMBER_OF_INSTANCES;
-int  TIME_SLICE;
-int  MEMORY_SIZE;
+void printInt(int i);
 
 // -----------------------------------------------------------------
 // ------------------------- SYMBOL TABLE --------------------------
@@ -3964,48 +3937,6 @@ void fetch() {
 }
 
 void execute() {
-
-    // Debug code for the first assignment
-    int i;
-    if(DEBUG_1) {
-        printInt(g_ticks);
-
-        i = 0;
-        while(i < (10 - int_length(g_ticks))) {
-            putchar(' ');
-            i = i + 1;
-        }
-        printString(' ','|','|',' ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
-        printInt(pc);
-
-        i = 0;
-        while(i < (8 - int_length(pc))) {
-            putchar(' ');
-            i = i + 1;
-        }
-        printString(' ','|','|',' ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
-        printInt(opcode);
-
-        i = 0;
-        while(i < (4 - int_length(opcode))) {
-            putchar(' ');
-            i = i + 1;
-        }
-        printString(' ','|','|',' ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
-
-        // Print the registers
-        i = 0;
-        while(i < 32) {
-            printInt(*(registers+i));
-            putchar(' ');
-            i = i + 1;
-        }
-
-        printString(' ','|','|',' ',0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
-        printInt(ir);
-        putchar(10);
-    }
-
     if (opcode == OP_SPECIAL) {
         if (function == FCT_NOP) {
             fct_nop();
@@ -4052,22 +3983,12 @@ void execute() {
 }
 
 void run() {
-    int *process;
-
     while (1) {
         fetch();
         decode();
         pre_debug();
         execute();
         post_debug();
-
-        // A1:
-        // g_ticks = g_ticks + 1; 
-
-        // if(g_ticks % TIME_SLICE == 0) {
-        //     process = process_schedule();
-        //     process_switch(process);
-        // }
     }
 }
 
@@ -4084,8 +4005,6 @@ int* parse_args(int argc, int *argv, int *cstar_argv) {
     int memorySize;
 
     memorySize = atoi((int*)*(cstar_argv+2)) * 1024 * 1024 / 4;
-    
-    MEMORY_SIZE = memorySize; // A1: Need to be known (for allocation purposes)
 
     allocateMachineMemory(memorySize*4);
 
@@ -4185,151 +4104,9 @@ int main_emulator(int argc, int *argv, int *cstar_argv) {
 
     up_copyArguments(argc-3, argv+3);
 
-    //init_readyqueue(); // A1
     run();
 
     exit(0);
-}
-
-// -----------------------------------------------------------------
-// -------------------------- ASSIGNMENT1 --------------------------
-// -----------------------------------------------------------------
-
-void init_readyqueue() {
-    int *process;
-    int *new_registers;
-    int *new_memory;
-    int i;
-
-    g_ticks = 0;
-    g_readyqueue = list_init();
-    NUMBER_OF_INSTANCES = 1; // TODO: Make dynamic
-    TIME_SLICE = 2; // TODO: Make dynamic
-
-    i = 0;
-    while(i < NUMBER_OF_INSTANCES) {
-        new_registers = memcpy(registers, 32); // 32 Registers
-        //new_memory = memcpy(memory, MEMORY_SIZE);
-
-        if(i == 0) {
-            g_running_process = process_init(i, new_registers, memory);
-        } else {
-            process = process_init(i, new_registers, memory);
-            list_push_front(g_readyqueue, process);
-        }
-
-        i = i + 1;
-    }
-}
-
-// Returns the next process to run
-int *process_schedule() {
-    int *process;
-
-    if(list_is_empty(g_readyqueue) == 1) {
-        if(DEBUG_1) {
-            printString('/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/',10);
-            printString('c','o','n','t','i','n','u','e',' ','w','i','t','h',' ',0,0,0,0,0,0);
-            printString('r','u','n','n','i','n','g',' ','p','r','o','c','e','s','s',10,0,0,0,0);
-        }
-        return g_running_process;
-    }
-
-    process = list_entry_get_data(list_pop_back(g_readyqueue));
-
-    if(DEBUG_1) {
-        printString('/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/',10);
-        printString('n','e','x','t',' ','p','r','o','c','e','s','s',' ','t','o',' ','r','u','n',' ');
-        printInt(process_get_id(process));
-        putchar(10);
-    }
-
-    return process;
-}
-
-// Switches to PROCESS
-void process_switch(int *process) {
-
-    if(process == g_running_process)
-        return;
-
-    // Save the state of the current process
-    process_set_pc(g_running_process, pc);
-    process_set_registers(g_running_process, registers);
-    //process_set_memory(g_running_process, memory);
-    list_push_front(g_readyqueue, g_running_process);
-
-    if(DEBUG_1) {
-        printString('s','a','v','e',' ','p','r','o','c','e','s','s',' ',0,0,0,0,0,0,0);
-        printInt(process_get_id(g_running_process));
-        putchar(' ');
-        printInt(process_get_pc(g_running_process));
-        putchar(' ');
-        printInt(process_get_registers(g_running_process));
-        putchar(' ');
-        printInt(process_get_memory(g_running_process));
-        putchar(' ');
-        putchar(10);
-    }
-
-    // Switch to PROCESS
-    pc = process_get_pc(process);
-    registers = process_get_registers(process);
-    memory = process_get_memory(process);
-    g_running_process = process;
-
-    if(DEBUG_1) {
-        printString('r','e','s','t','o','r','e',' ','p','r','o','c','e','s','s',' ',0,0,0,0);
-        printInt(process_get_id(g_running_process));
-        putchar(' ');
-        printInt(process_get_pc(g_running_process));
-        putchar(' ');
-        printInt(process_get_registers(g_running_process));
-        putchar(' ');
-        printInt(process_get_memory(g_running_process));
-        putchar(' ');
-        putchar(10);
-        printString('/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/','/',10);
-    }
-}
-
-// NUM ... Number of bytes
-int *memcpy(int *source, int num) {
-    int i;
-    int *dest;
-
-    i = 0;
-    dest = (int*)malloc(num * 4);
-    while(i < num) {
-        *(dest + i) = *(source + i);
-        i = i + 1;
-    }
-
-    return dest;
-}
-
-void printInt(int i) {
-    print(itoa(i, string_buffer, 10, 0));
-}
-
-int int_length(int i) {
-    int j;
-    int length;
-
-    if(i == 0)
-        return 1;
-    
-    if(i < 0)
-        i = (-1)*i;
-
-    j = 1;
-    length = 0;
-    while(i > j - 1) {
-        j = j * 10;
-        length = length + 1;
-    }
-
-    return length;
 }
 
 // -----------------------------------------------------------------
@@ -4646,6 +4423,10 @@ void print_process_list(int *list) {
     putchar(10); // Linefeed
 }
 
+void printInt(int i) {
+    print(itoa(i, string_buffer, 10, 0));
+}
+
 // -----------------------------------------------------------------
 // ---------------------------- TESTS ------------------------------
 // -----------------------------------------------------------------
@@ -4776,8 +4557,6 @@ int main(int argc, int *argv) {
     initSyscalls();
 
     cstar_argv = copyC2CStarArguments(argc, argv);
-
-    DEBUG_1 = 0; // Debug assignment 1
 
     if (argc > 1) {
         firstParameter = (int*) (*(cstar_argv+1));
