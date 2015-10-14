@@ -4062,12 +4062,12 @@ void run() {
         post_debug();
 
         // A1:
-        g_ticks = g_ticks + 1; 
+        // g_ticks = g_ticks + 1; 
 
-        if(g_ticks % TIME_SLICE == 0) {
-            process = process_schedule();
-            process_switch(process);
-        }
+        // if(g_ticks % TIME_SLICE == 0) {
+        //     process = process_schedule();
+        //     process_switch(process);
+        // }
     }
 }
 
@@ -4185,7 +4185,7 @@ int main_emulator(int argc, int *argv, int *cstar_argv) {
 
     up_copyArguments(argc-3, argv+3);
 
-    init_readyqueue(); // A1
+    //init_readyqueue(); // A1
     run();
 
     exit(0);
