@@ -4304,38 +4304,3 @@ int main(int argc, int *argv) {
         //main_compiler();
 	testList();
 }
-
-int main(int argc, int *argv) {
-    int *cstar_argv;
-    int *firstParameter;
-
-    initLibrary();
-
-    initRegister();
-    initDecoder();
-    initSyscalls();
-
-    cstar_argv = copyC2CStarArguments(argc, argv);
-
-    if (argc > 1) {
-        firstParameter = (int*) (*(cstar_argv+1));
-
-        if (*firstParameter == '-') {
-            if (*(firstParameter+1) == 'c')
-                main_compiler();
-            else if (*(firstParameter+1) == 'm') {
-                if (argc > 3)
-                    main_emulator(argc, argv, cstar_argv);
-                else
-                    exit(-1);
-            }
-            else {
-                exit(-1);
-            }
-        } else {
-            exit(-1);
-        }
-    } else
-        // default: compiler
-        main_compiler();
-}
