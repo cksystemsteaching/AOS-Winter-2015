@@ -4104,6 +4104,171 @@ int* copyC2CStarArguments(int argc, int *argv) {
     return cstar_argv;
 }
 
+/////////////////////////////////////////////////////////////////////
+//////------Assignment 0: Implementation of a Linked List------//////
+/////////////////////////////////////////////////////////////////////
+
+// Initialization of the linked list (Creating the header with data -1)
+// The header cannot be deleted!!
+int* initializeList(int *list) {
+	int *header;
+	int data = -1; // no data inserted
+
+	header = malloc(4*2);
+	*header = 0;
+	*(header+1) = data;
+	return header;
+}
+
+// Add a node to the linked list at the bottom
+int* addToList(int *list, int data) {
+
+	int *newNode;
+	newNode = malloc(4*2);
+	*newNode = list;
+	*(newNode+1) = data;
+	return newNode;
+}
+
+// Iterate through the linked list and get the nth node of the list
+int* getNodeFromList(int* list, int nthNode) {
+
+	while(nthNode > 0) {
+		list = *list;
+		nthNode = nthNode - 1;
+	}
+
+	return list;
+}
+
+// Iterate through the linked list and get the data of the nth node of the list
+int getDataFromList(int* list, int nthNode) {
+
+	while(nthNode > 0) {
+		list = *list;
+		nthNode = nthNode - 1;
+	}
+
+	return *(list+1);
+}
+
+// Iterate through the linked list and set the data of the nth node of the list
+int alterDataInList(int* list, int nthNode, int newValue) {
+
+	while(nthNode > 0) {
+		list = *list;
+		nthNode = nthNode - 1;
+	}
+
+	*(list+1) = newValue;
+
+	return *(list+1);
+}
+
+
+// Get the size of the linked list
+int sizeOfList(int* list) {
+
+	int *count;
+	count = malloc(4);
+	*count = 0;
+
+	while(*list != 0) {
+		list = *list;
+		*count = *count + 1;
+	}
+	return *count;
+}
+
+// Delete a node from the linked list from the top
+int* deleteFirstNodeFromList(int* list) {
+
+	int *prev;
+	int *next;
+	prev = malloc(2*4);
+	next = malloc(2*4);
+	*prev = 0;
+	*next = 0;
+	int size = sizeOfList(list);
+
+	prev = getNodeFromList(list, size-2);
+	next = getNodeFromList(list, size);
+	*prev = next;
+
+	return list;
+}
+
+// Sort the list with Bubble Sort
+int* sortList(int* list) {
+
+	int size = sizeOfList(list);
+	while(size > 1){
+		int i = 0;
+		while(i<size-1){
+			int x = getDataFromList(list, i);
+			int y = getDataFromList(list, i+1);
+			if(x < y){
+				alterDataInList(list, i, y);
+				alterDataInList(list, i+1, x);
+			}
+			i = i + 1;
+		}
+		size = size - 1;
+	}
+	return list;
+}
+
+// Print the linked list
+void printList(int* list) {
+
+	int *counter;
+	counter = malloc(4);
+	*counter = sizeOfList(list);
+
+	while(*counter >= 0) {
+		int number = getDataFromList(list, *counter);
+		int *Buffer = (int*)malloc(4*10);
+    		print(itoa( number, Buffer, 10, 0));
+		putchar(CHAR_LF);
+		*counter = *counter - 1;
+	}
+
+}
+
+int testList() {
+
+	int *list;
+	// Create new linked list (FIFO Linked List):
+	// top -> [9,7,8,2,4,1,5,3] -> bottom
+	printString('I','n','s','e','r','t',' ','i','n','t','o',' ','l','i','s','t',CHAR_LF,0,0,0);
+	list = initializeList(list);
+	list = addToList(list, 9);
+ 	list = addToList(list, 7);
+	list = addToList(list, 8);
+	list = addToList(list, 2);
+	list = addToList(list, 4);
+	list = addToList(list, 1);
+	list = addToList(list, 5);
+	list = addToList(list, 3);
+	printList(list);
+
+	// Delete the first node (FIFO Linked List):
+	// top -> [2,4,1,5,3] -> bottom
+	printString('D','e','l','e','t','e',' ','f','i','r','s','t',' ','n','o','d','e',CHAR_LF,0,0);
+	list = deleteFirstNodeFromList(list);
+	list = deleteFirstNodeFromList(list);
+	list = deleteFirstNodeFromList(list);
+	printList(list);
+
+	// Sorting the list
+	// top -> [5,4,3,2,1] -> bottom
+	printString('S','o','r','t','i','n','g',' ','t','h','e',' ','l','i','s','t',CHAR_LF,0,0,0);
+	list = sortList(list);
+	printList(list);
+
+	exit(0);
+}
+
 int main(int argc, int *argv) {
     int *cstar_argv;
     int *firstParameter;
@@ -4136,5 +4301,6 @@ int main(int argc, int *argv) {
         }
     } else
         // default: compiler
-        main_compiler();
+        //main_compiler();
+	testList();
 }
