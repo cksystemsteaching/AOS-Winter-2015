@@ -4169,15 +4169,14 @@ int alterDataInList(int* list, int nthNode, int newValue) {
 // Get the size of the linked list
 int sizeOfList(int* list) {
 
-	int *count;
-	count = malloc(4);
-	*count = 0;
+	int count;
+	count = 0;
 
 	while(*list != 0) {
 		list = *list;
-		*count = *count + 1;
+		count = count + 1;
 	}
-	return *count;
+	return count;
 }
 
 // Delete a node from the linked list from the top
@@ -4294,7 +4293,7 @@ int main(int argc, int *argv) {
                     exit(-1);
             }
 	    else if (*(firstParameter+1) == 'l') {
-		testList();
+		    testList();
 	    }
             else {
                 exit(-1);
