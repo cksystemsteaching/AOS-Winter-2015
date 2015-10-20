@@ -4104,9 +4104,18 @@ int* copyC2CStarArguments(int argc, int *argv) {
     return cstar_argv;
 }
 
-/////////////////////////////////////////////////////////////////////
-//////------Assignment 0: Implementation of a Linked List------//////
-/////////////////////////////////////////////////////////////////////
+//// Assignment 0: Basic data structures ////
+//Review linked lists and implement a simple program using a singly linked list in C*. The minimal requirements are as follows:
+//
+//must be implemented in C*
+//must compile with selfie
+//must run on selfie
+//the list must be dynamically allocated
+//every node must be dynamically allocated
+//inserting nodes to the list and removing nodes from the list
+//list iteration
+//Bonus: sort the list. Any way you like
+//Deadline: Oct 15, end of day
 
 // Initialization of the linked list (Creating the header with data -1)
 // The header cannot be deleted!!
@@ -4140,20 +4149,6 @@ int getNodeFromList(int *list, int nthNode) {
 
 	return list;
 }
-
-// Iterate through the linked list and set the data of the nth node of the list
-int alterDataInList(int *list, int nthNode, int newValue) {
-
-	while(nthNode > 0) {
-		list = *list;
-		nthNode = nthNode - 1;
-	}
-
-	*(list+1) = newValue;
-
-	return *(list+1);
-}
-
 
 // Get the size of the linked list
 int sizeOfList(int *list) {
@@ -4199,8 +4194,8 @@ int* sortList(int *list) {
 			int y = *(listitemY+1);
 
 			if(x < y) {
-				alterDataInList(list, i, y);
-				alterDataInList(list, i+1, x);
+                *(listitemX + 1) = y;
+                *(listitemY + 1) = x;
 			}
 			i = i + 1;
 		}
@@ -4260,6 +4255,19 @@ int testList() {
 
 	exit(0);
 }
+
+//// Assignment 1: Loading, scheduling, switching, execution ////
+//Implement basic concurrent execution of n processes in mipster. n >= 2
+//understand how mipster interprets and executes binary instructions. Tipp: add your own comments to the code
+//mipster maintains a local state for a process (running executable), e.g., pc, registers, memory
+//understand the purpose of each variable and data structure
+//duplicate the process state n times
+//running mipster like: ./selfie -m 32 yourbinary should generate n instances of yourbinary in a single instance of mipster
+//implement preemptive multitasking, i.e., switching between the n instances of yourbinary is determined by mipster
+//switch processes every m instructions. 1 <= m <= number of instructions in yourbinary
+//implement round-robin scheduling
+//add some output in yourbinary to demonstrate context switching
+//Deadline: Oct 22, end of day
 
 int main(int argc, int *argv) {
     int *cstar_argv;
