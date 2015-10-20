@@ -4131,7 +4131,7 @@ int* addToList(int *list, int data) {
 }
 
 // Iterate through the linked list and get the nth node of the list
-int* getNodeFromList(int* list, int nthNode) {
+int getNodeFromList(int *list, int nthNode) {
 
 	while(nthNode > 0) {
 		list = *list;
@@ -4141,19 +4141,8 @@ int* getNodeFromList(int* list, int nthNode) {
 	return list;
 }
 
-// Iterate through the linked list and get the data of the nth node of the list
-int getDataFromList(int* list, int nthNode) {
-
-	while(nthNode > 0) {
-		list = *list;
-		nthNode = nthNode - 1;
-	}
-
-	return *(list+1);
-}
-
 // Iterate through the linked list and set the data of the nth node of the list
-int alterDataInList(int* list, int nthNode, int newValue) {
+int alterDataInList(int *list, int nthNode, int newValue) {
 
 	while(nthNode > 0) {
 		list = *list;
@@ -4167,7 +4156,7 @@ int alterDataInList(int* list, int nthNode, int newValue) {
 
 
 // Get the size of the linked list
-int sizeOfList(int* list) {
+int sizeOfList(int *list) {
 
 	int count;
 	count = 0;
@@ -4180,7 +4169,7 @@ int sizeOfList(int* list) {
 }
 
 // Delete a node from the linked list from the top
-int* deleteFirstNodeFromList(int* list) {
+int* deleteFirstNodeFromList(int *list) {
 
 	int *prev;
 	int *next;
@@ -4198,15 +4187,18 @@ int* deleteFirstNodeFromList(int* list) {
 }
 
 // Sort the list with Bubble Sort
-int* sortList(int* list) {
+int* sortList(int *list) {
 
 	int size = sizeOfList(list);
 	while(size > 1){
 		int i = 0;
-		while(i<size-1){
-			int x = getDataFromList(list, i);
-			int y = getDataFromList(list, i+1);
-			if(x < y){
+		while(i < size-1) {
+		    int *listitemX = getNodeFromList(list, i);
+		    int *listitemY = getNodeFromList(list, i+1);
+			int x = *(listitemX+1);
+			int y = *(listitemY+1);
+
+			if(x < y) {
 				alterDataInList(list, i, y);
 				alterDataInList(list, i+1, x);
 			}
@@ -4218,14 +4210,15 @@ int* sortList(int* list) {
 }
 
 // Print the linked list
-void printList(int* list) {
+void printList(int *list) {
 
 	int *counter;
 	counter = malloc(4);
 	*counter = sizeOfList(list);
 
 	while(*counter >= 0) {
-		int number = getDataFromList(list, *counter);
+		int *nodeNumber = getNodeFromList(list, *counter);
+		int number = *(nodeNumber+1);
 		int *Buffer = (int*)malloc(4*10);
     		print(itoa( number, Buffer, 10, 0));
 		putchar(CHAR_LF);
