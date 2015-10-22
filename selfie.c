@@ -3463,6 +3463,20 @@ void emitPutchar() {
 // ------------------------- INSTRUCTIONS --------------------------
 // -----------------------------------------------------------------
 
+// ------------------------ GLOBAL VARIABLES -----------------------------------
+// ready queue
+int* ready_queue;
+// number of instructions for one process in one run
+int numb_of_instr;
+// getting maximal memory size
+int MAX_MEM;
+// Address of the actual running thread
+int* running_process;
+
+void printList(int *list);
+void printListPC(int *list); 
+void schedule_and_switch();
+
 void fct_syscall() {
     if (debug_disassemble) {
         print((int*)(*(fct_strings+function)));
@@ -3931,6 +3945,12 @@ void execute() {
 }
 
 void run() {
+    int instr;
+    int* nextprocess;
+    int *Buffer;
+    Buffer = (int*)malloc(4*10);
+
+    instr = 0;	
 
     while (1) {
         fetch();
@@ -3938,6 +3958,16 @@ void run() {
         pre_debug();
         execute();
         post_debug();
+
+        instr = instr + 1;
+        *(running_process+1) = *(running_process+1) + 1;
+
+        if(instr == numb_of_instr){
+         //round robin scheduling and switching the running process
+         schedule_and_switch();
+         instr = 0;
+        }
+	 
     }
 }
 
@@ -3954,6 +3984,8 @@ int* parse_args(int argc, int *argv, int *cstar_argv) {
     int memorySize;
 
     memorySize = atoi((int*)*(cstar_argv+2)) * 1024 * 1024 / 4;
+
+    MAX_MEM = memorySize;	
 
     allocateMachineMemory(memorySize*4);
 
@@ -4044,6 +4076,391 @@ void up_copyArguments(int argc, int *argv) {
     }
 }
 
+//// Assignment 0: Basic data structures ////
+//Review linked lists and implement a simple program using a singly linked list in C*. The minimal requirements are as follows:
+//
+//must be implemented in C*
+//must compile with selfie
+//must run on selfie
+//the list must be dynamically allocated
+//every node must be dynamically allocated
+//inserting nodes to the list and removing nodes from the list
+//list iteration
+//Bonus: sort the list. Any way you like
+//Deadline: Oct 15, end of day
+
+// Initialization of the linked list (Creating the header with data -1)
+// The header cannot be deleted!!
+int* initializeList(int *list) {
+	int *header;
+	int data;
+
+	header = malloc(4*2);
+	*header = 0;
+	return header;
+}
+
+// Add a node to the linked list at the bottom
+int* addToList(int *list, int data) {
+
+	int *newNode;
+	newNode = malloc(4*2);
+	*newNode = (int) list;
+	*(newNode+1) = data;
+	return newNode;
+}
+
+// Iterate through the linked list and get the nth node of the list
+int getNodeFromList(int *list, int nthNode) {
+
+	while(nthNode > 0) {
+		list = (int*) *list;
+		nthNode = nthNode - 1;
+	}
+
+	return (int) list;
+}
+
+// Get the size of the linked list
+int sizeOfList(int *list) {
+
+	int count;
+	count = 0;
+
+	while(*list != 0) {
+		list = (int*) *list;
+		count = count + 1;
+	}
+	return count;
+}
+
+// Delete a node from the linked list from the top
+int* deleteFirstNodeFromList(int *list) {
+
+	int *prev;
+	int *next;
+	int size;
+	prev = malloc(2*4);
+	next = malloc(2*4);
+	*prev = 0;
+	*next = 0;
+	size = sizeOfList(list);
+
+	prev = (int*) getNodeFromList(list, size-2);
+	next = (int*) getNodeFromList(list, size);
+	*prev = (int) next;
+
+	return list;
+}
+
+// Sort the list with Bubble Sort
+int* sortList(int *list) {
+
+	int size; 
+	int i;
+	int *listitemX;
+	int *listitemY;
+	int x;
+	int y;
+
+	size = sizeOfList(list);
+
+	while(size > 1){
+		i = 0;
+		while(i < size-1) {
+			listitemX = (int*) getNodeFromList(list, i);
+			listitemY = (int*) getNodeFromList(list, i+1);
+			x = *(listitemX+1);
+			y = *(listitemY+1);
+
+			if(x < y) {
+                		*(listitemX + 1) = y;
+               			*(listitemY + 1) = x;
+			}
+			i = i + 1;
+		}
+		size = size - 1;
+	}
+	return list;
+}
+
+// Print the linked list
+void printList(int *list) {
+
+	int counter;
+	int *nodeNumber;
+	int number; 
+	int *Buffer; 	
+	
+	counter = sizeOfList(list)-1;
+
+	while(counter >= 0) {
+		nodeNumber = (int*) getNodeFromList(list, counter);
+		number = *(nodeNumber+1);
+		Buffer = (int*)malloc(4*10);
+    	print(itoa(number, Buffer, 10, 0));
+		putchar(CHAR_LF);
+		counter = counter - 1;
+	}
+}
+
+//Testing for Assignment 00
+int test00() {
+
+	int *list;
+	// Create new linked list (FIFO Linked List):
+	// top -> [9,7,8,2,4,1,5,3] -> bottom
+	printString('I','n','s','e','r','t',' ','i','n','t','o',' ','l','i','s','t',CHAR_LF,0,0,0);
+	list = initializeList(list);
+	list = addToList(list, 9);
+ 	list = addToList(list, 7);
+	list = addToList(list, 8);
+	list = addToList(list, 2);
+	list = addToList(list, 4);
+	list = addToList(list, 1);
+	list = addToList(list, 5);
+	list = addToList(list, 3);
+	printList(list);
+
+	// Delete the first node (FIFO Linked List):
+	// top -> [2,4,1,5,3] -> bottom
+	printString('D','e','l','e','t','e',' ','f','i','r','s','t',' ','n','o','d','e',CHAR_LF,0,0);
+	list = deleteFirstNodeFromList(list);
+	list = deleteFirstNodeFromList(list);
+	list = deleteFirstNodeFromList(list);
+	printList(list);
+
+	// Sorting the list
+	// top -> [5,4,3,2,1] -> bottom
+	printString('S','o','r','t','i','n','g',' ','t','h','e',' ','l','i','s','t',CHAR_LF,0,0,0);
+	list = sortList(list);
+	printList(list);
+
+	exit(0);
+}
+
+//// Assignment 1: Loading, scheduling, switching, execution ////
+//Implement basic concurrent execution of n processes in mipster. n >= 2
+//understand how mipster interprets and executes binary instructions. Tipp: add your own comments to the code
+//mipster maintains a local state for a process (running executable), e.g., pc, registers, memory
+//understand the purpose of each variable and data structure
+//duplicate the process state n times
+//running mipster like: ./selfie -m 32 yourbinary should generate n instances of yourbinary in a single instance of mipster
+//implement preemptive multitasking, i.e., switching between the n instances of yourbinary is determined by mipster
+//switch processes every m instructions. 1 <= m <= number of instructions in yourbinary
+//implement round-robin scheduling
+//add some output in yourbinary to demonstrate context switching
+//Deadline: Oct 22, end of day
+
+// ------------------------ DATA STRUCTURE FOR A PROCESS -----------------------
+// Creating a new Process with Process ID (new_pid), Programm Counter (new_pc), 
+// Address to the Register (new_reg), Address to the Memory (new_mem),
+// hi register for multiplication/division (new_reg_hi) and
+// lo register for multiplication/division (new_reg_lo) and
+int* create_process(int new_pid, int* new_reg, int* new_mem, int new_reg_hi, int new_reg_lo){
+	//initialization of the process	
+	int* process;	
+	//memory allocation
+	process = malloc (6 * 4);
+
+	//initalization of the argments of the process 
+	*process = new_pid;
+	*(process+1) = 0;
+	*(process+2) = (int) new_reg;
+	*(process+3) = (int) new_mem;
+	*(process+4) = new_reg_hi;
+	*(process+5) = new_reg_lo;
+
+	return process;
+}
+
+// ------------------------ READY QUEUE ----------------------------------------
+// Creating a Ready queue with n processes and with m as number of instructions
+void create_ready_queue(int n, int m){
+	
+	int *new_process;
+	int pid;
+	int *new_reg;
+	int *new_mem;
+	
+	numb_of_instr = m;
+	pid = 0;
+	ready_queue = initializeList(ready_queue);
+
+	while(pid < n){
+		new_reg = malloc(4*32);
+		new_mem = malloc(4*MAX_MEM);
+		if(pid ==0){
+			running_process = create_process(pid, new_reg, new_mem, reg_hi, reg_lo);
+		}
+		else{
+			new_process = create_process(pid, new_reg, new_mem, reg_hi, reg_lo);
+			ready_queue = addToList(ready_queue, new_process);
+		}
+		pid = pid + 1;
+	}
+}
+
+void printListPID(int *list) {
+	int counter;
+	int number;
+	int *Buffer;
+	int *node;
+	int *process;
+
+	counter = sizeOfList(list)-1;
+
+	while(counter >= 0) {
+		node = (int*) getNodeFromList(list, counter);
+		process = *(node+1);
+		number = *(process);
+		Buffer = (int*)malloc(4*10);
+    	print(itoa(number, Buffer, 10, 0));
+		putchar(CHAR_LF);
+		counter = counter - 1;
+	}
+
+}
+
+// Print the value of the Program counters
+void printListPC(int *list) {
+
+	int counter;
+	int number;
+	int *Buffer; 	
+	int *node;
+	int *process;
+
+	counter = sizeOfList(list)-1;
+
+	while(counter >= 0) {
+		node = (int*) getNodeFromList(list, counter);
+		process = *(node+1);
+		number = *(process+1);
+		Buffer = (int*)malloc(4*10);
+    	print(itoa(number, Buffer, 10, 0));
+		putchar(CHAR_LF);
+		counter = counter - 1;
+	}
+
+}
+
+void schedule_and_switch(){
+	int size;
+	int *node;
+	size = sizeOfList(ready_queue);
+	//if the ready queue is empty, the running process can continue
+	if(size == 0){
+		printString('e','m','p','t','y','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-');
+		return;
+	}	
+	//else the processes have to be switched so that the next process from the ready queue is allowed to run
+	else{
+		// 1. Saving the states of the running process in the ready queue
+		ready_queue = addToList(ready_queue, running_process);
+		// 2. Switching the running process and get the first of the ready queue
+		node = getNodeFromList(ready_queue, size-1);
+		running_process = *(node+1);
+
+		// 3. Delete the first Process from ready queue because it is the running process
+		ready_queue = deleteFirstNodeFromList(ready_queue);			
+	}
+}
+
+void runtest() {
+    int* nextprocess;
+    int instr;
+    int *Buffer;
+
+    instr = 0;
+    Buffer = (int*)malloc(4*10);
+    
+    while (1) {
+	instr = instr + 1;
+	*(running_process+1) = *(running_process+1) + 1;
+	
+	if(instr == numb_of_instr){
+	 //round robin scheduling and switching the running process
+	 
+	 //Printing the Ready queue and the running process
+	 printString('-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-');
+	 putchar(CHAR_LF);
+	 printString('-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-');
+     putchar(CHAR_LF);
+	 printString('R','e','a','d','y','Q','u','e','u','e',' ','a','f','t','e','r',' ','R','u','n'); 
+	 printString('n','i','n','g',' ', 'P','r','o','c','e','s','s',CHAR_LF,0,0,0,0,0,0,0);
+	 printString('P','I','D','s',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+	 printListPID(ready_queue);
+	 printString('P','C','s',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+	 printListPC(ready_queue);
+	 printString('N','e','w',' ','R','u','n','n','i','n','g',' ','P','r','o','c','e','s','s',CHAR_LF);
+	 printString('P','I','D',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+	 print(itoa(*(running_process), Buffer, 10, 0));
+	 putchar(CHAR_LF);
+	 printString('P','C',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+	 print(itoa(*(running_process+1), Buffer, 10, 0));
+	 putchar(CHAR_LF);
+	 schedule_and_switch(); 
+	 instr = 0;
+
+	 //Printing the Ready queue and the running process
+	 printString('-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-');
+	 putchar(CHAR_LF);
+	 printString('-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-');
+     putchar(CHAR_LF);
+	 printString('R','e','a','d','y','Q','u','e','u','e',' ','a','f','t','e','r',' ','S','w','i'); 
+	 printString('t','c','h','i','n','g',' ', 'P','r','o','c','e','s','s',CHAR_LF,0,0,0,0,0);
+	 printString('P','I','D','s',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+	 printListPID(ready_queue);
+	 printString('P','C','s',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+	 printListPC(ready_queue);
+	 printString('N','e','w',' ','R','u','n','n','i','n','g',' ','P','r','o','c','e','s','s',CHAR_LF);
+	 printString('P','I','D',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+	 print(itoa(*(running_process), Buffer, 10, 0));
+	 putchar(CHAR_LF);
+	 printString('P','C',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+	 print(itoa(*(running_process+1), Buffer, 10, 0));
+	 putchar(CHAR_LF);
+	} 
+    }
+}
+
+//Testing for Assignment 01
+int test01() {
+
+	int *Buffer;
+
+	create_ready_queue(5,100000000);
+
+	Buffer = (int*)malloc(4*10);
+
+	printString('-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-');
+	putchar(CHAR_LF);
+	printString('-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-','-');
+        putchar(CHAR_LF); 
+	//Printing the Ready Queue after the creation (PID's and PC's)
+	printString('R','e','a','d','y','Q','u','e','u','e',' ','a','f','t','e','r',' ','C','r','e'); 
+	printString('a','t','i','o','n',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+	printString('P','I','D','s',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+	printListPID(ready_queue);
+	printString('P','C','s',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+	printListPC(ready_queue);
+
+	//Printing the PID and the PC of the running Process
+	printString('R','u','n','n','i','n','g',' ','P','r','o','c','e','s','s',CHAR_LF,0,0,0,0);
+	printString('P','I','D',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+	print(itoa(*(running_process), Buffer, 10, 0));
+	putchar(CHAR_LF);
+	printString('P','C',CHAR_LF,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0);
+	print(itoa(*(running_process+1), Buffer, 10, 0));
+	putchar(CHAR_LF);
+
+	//Testversion of run of the Emulator
+	runtest();
+
+	exit(0);
+}
+
 int main_emulator(int argc, int *argv, int *cstar_argv) {
     initInterpreter();
 
@@ -4052,6 +4469,9 @@ int main_emulator(int argc, int *argv, int *cstar_argv) {
     *(registers+REG_K1) = *(registers+REG_GP);
 
     up_copyArguments(argc-3, argv+3);
+
+    //create a ready queue and 5 processes
+    create_ready_queue(5,10);
 
     run();
 
@@ -4104,171 +4524,6 @@ int* copyC2CStarArguments(int argc, int *argv) {
     return cstar_argv;
 }
 
-//// Assignment 0: Basic data structures ////
-//Review linked lists and implement a simple program using a singly linked list in C*. The minimal requirements are as follows:
-//
-//must be implemented in C*
-//must compile with selfie
-//must run on selfie
-//the list must be dynamically allocated
-//every node must be dynamically allocated
-//inserting nodes to the list and removing nodes from the list
-//list iteration
-//Bonus: sort the list. Any way you like
-//Deadline: Oct 15, end of day
-
-// Initialization of the linked list (Creating the header with data -1)
-// The header cannot be deleted!!
-int* initializeList(int *list) {
-	int *header;
-	int data = -1; // no data inserted
-
-	header = malloc(4*2);
-	*header = 0;
-	*(header+1) = data;
-	return header;
-}
-
-// Add a node to the linked list at the bottom
-int* addToList(int *list, int data) {
-
-	int *newNode;
-	newNode = malloc(4*2);
-	*newNode = list;
-	*(newNode+1) = data;
-	return newNode;
-}
-
-// Iterate through the linked list and get the nth node of the list
-int getNodeFromList(int *list, int nthNode) {
-
-	while(nthNode > 0) {
-		list = *list;
-		nthNode = nthNode - 1;
-	}
-
-	return list;
-}
-
-// Get the size of the linked list
-int sizeOfList(int *list) {
-
-	int count;
-	count = 0;
-
-	while(*list != 0) {
-		list = *list;
-		count = count + 1;
-	}
-	return count;
-}
-
-// Delete a node from the linked list from the top
-int* deleteFirstNodeFromList(int *list) {
-
-	int *prev;
-	int *next;
-	prev = malloc(2*4);
-	next = malloc(2*4);
-	*prev = 0;
-	*next = 0;
-	int size = sizeOfList(list);
-
-	prev = getNodeFromList(list, size-2);
-	next = getNodeFromList(list, size);
-	*prev = next;
-
-	return list;
-}
-
-// Sort the list with Bubble Sort
-int* sortList(int *list) {
-
-	int size = sizeOfList(list);
-	while(size > 1){
-		int i = 0;
-		while(i < size-1) {
-		    int *listitemX = getNodeFromList(list, i);
-		    int *listitemY = getNodeFromList(list, i+1);
-			int x = *(listitemX+1);
-			int y = *(listitemY+1);
-
-			if(x < y) {
-                *(listitemX + 1) = y;
-                *(listitemY + 1) = x;
-			}
-			i = i + 1;
-		}
-		size = size - 1;
-	}
-	return list;
-}
-
-// Print the linked list
-void printList(int *list) {
-
-	int *counter;
-	counter = malloc(4);
-	*counter = sizeOfList(list);
-
-	while(*counter >= 0) {
-		int *nodeNumber = getNodeFromList(list, *counter);
-		int number = *(nodeNumber+1);
-		int *Buffer = (int*)malloc(4*10);
-    		print(itoa( number, Buffer, 10, 0));
-		putchar(CHAR_LF);
-		*counter = *counter - 1;
-	}
-
-}
-
-int testList() {
-
-	int *list;
-	// Create new linked list (FIFO Linked List):
-	// top -> [9,7,8,2,4,1,5,3] -> bottom
-	printString('I','n','s','e','r','t',' ','i','n','t','o',' ','l','i','s','t',CHAR_LF,0,0,0);
-	list = initializeList(list);
-	list = addToList(list, 9);
- 	list = addToList(list, 7);
-	list = addToList(list, 8);
-	list = addToList(list, 2);
-	list = addToList(list, 4);
-	list = addToList(list, 1);
-	list = addToList(list, 5);
-	list = addToList(list, 3);
-	printList(list);
-
-	// Delete the first node (FIFO Linked List):
-	// top -> [2,4,1,5,3] -> bottom
-	printString('D','e','l','e','t','e',' ','f','i','r','s','t',' ','n','o','d','e',CHAR_LF,0,0);
-	list = deleteFirstNodeFromList(list);
-	list = deleteFirstNodeFromList(list);
-	list = deleteFirstNodeFromList(list);
-	printList(list);
-
-	// Sorting the list
-	// top -> [5,4,3,2,1] -> bottom
-	printString('S','o','r','t','i','n','g',' ','t','h','e',' ','l','i','s','t',CHAR_LF,0,0,0);
-	list = sortList(list);
-	printList(list);
-
-	exit(0);
-}
-
-//// Assignment 1: Loading, scheduling, switching, execution ////
-//Implement basic concurrent execution of n processes in mipster. n >= 2
-//understand how mipster interprets and executes binary instructions. Tipp: add your own comments to the code
-//mipster maintains a local state for a process (running executable), e.g., pc, registers, memory
-//understand the purpose of each variable and data structure
-//duplicate the process state n times
-//running mipster like: ./selfie -m 32 yourbinary should generate n instances of yourbinary in a single instance of mipster
-//implement preemptive multitasking, i.e., switching between the n instances of yourbinary is determined by mipster
-//switch processes every m instructions. 1 <= m <= number of instructions in yourbinary
-//implement round-robin scheduling
-//add some output in yourbinary to demonstrate context switching
-//Deadline: Oct 22, end of day
-
 int main(int argc, int *argv) {
     int *cstar_argv;
     int *firstParameter;
@@ -4293,8 +4548,11 @@ int main(int argc, int *argv) {
                 else
                     exit(-1);
             }
-	    else if (*(firstParameter+1) == 'l') {
-		    testList();
+	    else if (*(firstParameter+1) == '0') {
+		    test00();
+	    }
+	    else if (*(firstParameter+1) == '1') {
+		    test01();
 	    }
             else {
                 exit(-1);
