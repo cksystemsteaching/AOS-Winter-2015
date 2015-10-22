@@ -857,6 +857,40 @@ int ir; // instruction record
 int reg_hi; // hi register for multiplication/division
 int reg_lo; // lo register for multiplication/division
 
+
+// -----------------ADDITIONAL METHODS ASSIGNMENT 1 ----------------
+
+void push(int *mem, int *reg, int *reg_hi, int *reg_lo, int pc, int *head);
+
+void setPrcosessNext(int *process, int *next);
+void setProcessPc(int * process, int pc);
+void setProcessMemory(int *process, int *memory);
+void setProcessRegisters(int *process, int *registers);
+void setProcessRegHi(int *process, int reg_hi);
+void setProcessRegLo(int *process, int reg_lo);
+
+int* getProcessNext(int *process);
+int getProcessPc(int *process);
+int* getProcessMemory(int *process);
+int* getProcessRegisters(int *process);
+int getProcessRegHi(int *process);
+int getProcessRegLo(int *process);
+
+void createProcessList(int numberoOfProcesses);
+void createProcess(int *head);
+void memCopy(int *oldMemory, int *newMemory, int length);
+
+
+int* pop(int *head);
+void scheduler();
+
+// ------------------ADDITIONAL GLOBAL VARIABLES A1 --------------
+
+int* readyqueue;
+int memSize;
+int numberofInstructions;
+
+
 // ------------------------- INITIALIZATION ------------------------
 
 void initInterpreter() {
@@ -938,6 +972,9 @@ void initInterpreter() {
 
     reg_hi = 0;
     reg_lo = 0;
+    
+    readyqueue = 0;//ADDED A1
+    numberofInstructions = 0; //ADDED A1
 }
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -3930,15 +3967,24 @@ void execute() {
     }
 }
 
+//A1 NEW RUN METHOD TO SUPPORT PROCESS SWITCH
 void run() {
-
+    pop(readyqueue);
     while (1) {
         fetch();
         decode();
         pre_debug();
         execute();
         post_debug();
+        
+        numberofInstructions = numberofInstructions + 1;
+        if(numberofInstructions > 10){
+            scheduler();
+        }
+        
     }
+    
+    
 }
 
 void debug_boot(int memorySize) {
@@ -3956,7 +4002,8 @@ int* parse_args(int argc, int *argv, int *cstar_argv) {
     memorySize = atoi((int*)*(cstar_argv+2)) * 1024 * 1024 / 4;
 
     allocateMachineMemory(memorySize*4);
-
+    memSize = memorySize;   //ADDED A1
+    
     // initialize stack pointer
     *(registers+REG_SP) = (memorySize - 1) * 4;
 
@@ -4052,11 +4099,188 @@ int main_emulator(int argc, int *argv, int *cstar_argv) {
     *(registers+REG_K1) = *(registers+REG_GP);
 
     up_copyArguments(argc-3, argv+3);
+    
+    createProcessList(3); //ADDED CREATES LIST WITH 3 PROCESSES
 
     run();
 
     exit(0);
 }
+// ----------------------------------------------------------------
+// ---------------------ASSIGNMENT 1 ------------------------------
+// ----------------------------------------------------------------
+
+
+void memCopy(int *oldMemory, int *newMemory, int length) {
+    int i;
+    
+    i = 0;
+    
+    while (i < length) {
+        *(newMemory+i) = *(oldMemory+i);
+        i = i + 1;
+    }
+}
+
+void createProcessList (int numberoOfProcesses){
+    int i;
+    i = 0;
+    
+    while(i<numberoOfProcesses){
+        createProcess(readyqueue);
+        i = i+1;
+    }
+}
+
+void createProcess(int *head){
+    //process adress;
+    int *newMemory;
+    int *newRegisters;
+    int newPC;
+    int newRegHi;
+    int newRegLo;
+    
+    
+    if((int)(head) == 0 ){
+        push(memory,registers,reg_hi,reg_lo,pc,readyqueue);
+    }
+    else{
+        
+        newMemory = (int*)malloc(memSize*4);
+        newRegisters = (int*)malloc(32*4);
+        
+        memCopy(memory,newMemory,memSize);
+        memCopy(registers,newRegisters,32);
+        
+        newPC = pc;
+        newRegHi = reg_hi;
+        newRegLo = reg_lo;
+        
+        push(newMemory,newRegisters,newRegHi,newRegLo,newPC,readyqueue);
+    }
+}
+
+void push(int *memory, int *registers, int *reg_hi, int *reg_lo, int pc, int *head){
+    
+    int  *adr;
+    
+    // Process Data Structure :
+    // +----+------------+
+    // |  0 | ptr to next|
+    // |  1 | pc         |
+    // |  2 | mem        |
+    // |  3 | reg        |
+    // |  4 | reg_hi     |
+    // |  5 | reg_lo     |
+    // +----+------------+
+    
+    adr = (int*)malloc (5*4);
+    
+    setPrcosessNext(adr,head);
+    setProcessPc(adr,pc);
+    setProcessMemory(adr,memory);
+    setProcessRegisters(adr,registers);
+    setProcessRegHi(adr,reg_hi);
+    setProcessRegLo(adr,reg_lo);
+    
+    readyqueue = adr;
+    
+}
+
+int * pop(int *head){
+    int i;
+    int *temp;
+    int* number_buffer;
+    
+    i = 0;
+    number_buffer = (int*) malloc (10 * 4);
+    
+    
+    if((int)(head) ==0)
+        return 0;
+    
+    if(*(head) == 0){
+        readyqueue = 0;
+        return head;
+    }
+    
+    while(*(head) != 0){
+        temp = getProcessNext(head);
+        if(*(temp) == 0){
+            setPrcosessNext(head,0);
+            return temp;
+        }
+        
+        head = temp;
+    }
+}
+
+void setPrcosessNext(int *process, int *next){
+    *process = (int)(next);
+}
+
+void setProcessPc(int * process, int pc){
+    *(process+1) = pc;
+}
+
+void setProcessMemory(int *process, int *memory){
+    *(process+2) = (int)(memory);
+}
+
+void setProcessRegisters(int *process, int *registers){
+    *(process+3) = (int)(registers);
+}
+
+void setProcessRegHi(int *process, int reg_hi){
+    *(process+4) = reg_hi;
+}
+
+void setProcessRegLo(int *process, int reg_lo){
+    *(process+5) = reg_lo;
+}
+
+int* getProcessNext(int *process){
+    return (int*) *process;
+}
+
+int getProcessPc(int *process){
+    return *(process+1);
+}
+
+int* getProcessMemory(int *process){
+    return (int*) *(process+2);
+}
+
+int* getProcessRegisters(int *process){
+    return (int*) *(process+3);
+}
+
+int getProcessRegHi(int *process){
+    return *(process+4);
+}
+
+int getProcessRegLo(int *process){
+    return *(process+5);
+}
+
+void scheduler(){
+    int * process;
+    
+    //save the process state
+    push(memory,registers,reg_hi,reg_lo,pc,readyqueue);
+    
+    //get the next process
+    process = pop(readyqueue);
+    
+    memory = getProcessMemory(process);
+    registers = getProcessRegisters(process);
+    pc = getProcessPc(process);
+    reg_hi = getProcessRegHi(process);
+    reg_lo = getProcessRegLo(process);
+    
+    numberofInstructions = 0;
+}
+
 
 // -----------------------------------------------------------------
 // ----------------------------- MAIN ------------------------------
