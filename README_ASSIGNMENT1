@@ -1,0 +1,83 @@
+############################################################
+## Assignment 1: Loading, scheduling, switching, execution #
+############################################################
+https://github.com/cksystemsteaching/AOS-Winter-2015
+Author: armin langhofer <uni@langhofer.at>
+
+Please note: in this example _4_ instances of count.c are loaded and executed.
+
+To Compile, please follow these steps:
+======================================
+1. install ubuntu 32bit lts server edition, apt-get install gcc.
+2. see https://github.com/mistay/AOS-Winter-2015/tree/selfie-master for how to get selfie up and running
+3. git clone repro from https://github.com/mistay/AOS-Winter-2015.git or, if pull request was accepted from
+   https://github.com/cksystemsteaching/AOS-Winter-2015.git
+4. change into cloned directory and do the following:
+
+$ gcc -o selfie selfie.c 
+$ touch out
+$ ./selfie -c < count.c
+$
+
+To Run:
+=======
+# setting NUM_BINARES to 1 ends up in this result:
+$ ./selfie -m 32 out
+out: memory size 32MB
+0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYout: exiting with error code 7
+
+# now setting NUM_BINARIES to 4, recomplile and run:
+$ ./selfie -m 32 out
+out: memory size 32MB
+0000111122223333444455556666777788889999::::;;;;<<<<====>>>>????@@@@AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJJJKKKKLLLLMMMMNNNNOOOOPPPPQQQQRRRRSSSSTTTTUUUUVVVVWWWWXXXXYYYYout: exiting with error code 7
+$
+
+Interpretation and Explanation of what happened
+===============================================
+NUM_BINARIES is a global 'constant' in selfie.c that can be adjusted to the number of binaries that are loaded into memore as requested by assignment 1.
+
+setting to 1 and executing a the following demo:
+
+-- snip demo --
+$ more count.c 
+int main() {
+	int i;
+	i=48;
+
+	// print '0' to 'Z' (in asciitable)
+	while (i<90) {
+		putchar(i);
+		i = i+1;
+	}
+
+	exit(7);
+}
+-- /snip demo --
+
+leads to the output shown above.
+
+Some notes on memory usage:
+- n times memory is needed (the loadBinary() memory is copied n-1 times)
+- the int* registers are copied n-1 times
+- pc, reg_hi, reg_lo and ir are copied n-1 times (and organized in int* processes)
+
+Please note: three commands are executed, then a context switch is performed. The value of three can be adusted in run() and should not affect the number of characters printed when running the demo code. I tested this for m=3 and m=4 successfully.
+
+
+
+Result
+======
+[OK] Uunderstand how mipster interprets and executes binary instructions. Tipp: add your own comments to the code
+[OK] mipster maintains a local state for a process (running executable), e.g., pc, registers, memory
+[OK] understand the purpose of each variable and data structure
+[OK] duplicate the process state n times
+[OK] running mipster like: ./selfie -m 32 yourbinary should generate n instances of yourbinary in a single instance of mipster
+[OK] implement preemptive multitasking, i.e., switching between the n instances of yourbinary is determined by mipster
+[OK, tested for m=3 and m=4] switch processes every m instructions. 1 <= m <= number of instructions in yourbinary
+[OK, see output] implement round-robin scheduling
+[OK, see count.c] add some output in yourbinary to demonstrate context switching
+[NG, needed more time to work on this assignment] Deadline: Oct 22, end of day
+
+
+
+
