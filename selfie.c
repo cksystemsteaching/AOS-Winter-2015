@@ -72,6 +72,9 @@
 // -----------------------------------------------------------------
 // ----------------------- LIBRARY FUNCTIONS -----------------------
 // -----------------------------------------------------------------
+#include<stdio.h>
+int NUM_BINARIES;
+int *registers_all;
 
 void initLibrary();
 
@@ -3388,9 +3391,35 @@ void loadBinary() {
             println();
         }
 
-        if (numberOfReadBytes == 4)
-            binaryLength = binaryLength + 4;
+	// armin: bug?
+        //if (numberOfReadBytes == 4)
+        //    binaryLength = binaryLength + 4;
+
+	binaryLength = binaryLength + numberOfReadBytes;
+	// armin: why not binaryLength = binaryLength + numberOfReadBytes ??
     }
+}
+
+void duplicateBinary(int num_copies) {
+	int i;
+	int j;
+	int binarywords;
+	
+	binarywords = binaryLength / 4;
+	if (binaryLength %4 != 0 )
+		// last 1-3 bytes of binary use another word
+		binarywords = binarywords + 1;
+
+
+	i=0; // current word
+	j=1; // current instance
+	while (j <= num_copies) {
+		while ( i < binarywords) { 
+			*(memory + i + (binarywords * j)) = *(memory + i);
+			i = i + 1; // word
+		}
+		j = j + 1;
+	}
 }
 
 // -----------------------------------------------------------------
@@ -4090,13 +4119,82 @@ void execute() {
     }
 }
 
+// memory that holds all information about a context except registers
+int* contexts;
+
+// memory that holds registers of each single process
+int* registerstable;
+
+
+void saveContext(process) {
+	*(contexts + process * 5 + 0) = pc;
+	*(contexts + process * 5 + 2) = reg_hi;
+	*(contexts + process * 5 + 3) = reg_lo;
+	*(contexts + process * 5 + 4) = ir;
+
+	// registers dont have to be saved as they're already at correct position
+}
+
+void loadContext(process) {
+	pc = 		*(contexts + process * 5 + 0); 
+	reg_hi =	*(contexts + process * 5 + 2);
+	reg_lo = 	*(contexts + process * 5 + 3);
+	ir =		*(contexts + process * 5 + 4);
+
+	// redirect pointer to process' registers
+ 	registers = (registers_all + process * 32 );
+}
+
+
 void run() {
+
+    // current instruction within process, e.g. instr 2/3 in process 2
+    int m;
+
+    // current process id (0..2 for NUM_BINARIES = 3)
+    int process;
+
+    // loop variables
+    int j=0;
+    int i=0;
+
+    
+    contexts = malloc(5 * 4 * NUM_BINARIES);
+
+    // like registers except linear memory that is allocated for each process
+    registers_all = malloc (32*4*NUM_BINARIES);
+
+    // init registers_all (by copying)
+    for (j=0; j<NUM_BINARIES; j++) {
+	    for (i=0; i<32; i++) {
+		*(registers_all + j*32 + i) = *(registers + i);
+	    }
+    }
+
+    // instruction 0 of process 0
+    m = 0;
+    process = 0;
+
+
     while (1) {
         fetch();
+
         decode();
         pre_debug();
         execute();
         post_debug();
+
+        // switch all 3 instructions to next process
+	m = m+1;
+        if (m == 3) {
+		m = 0;
+		saveContext(process);
+		process = process + 1;
+		if (process == NUM_BINARIES)
+			process = 0;
+		
+		loadContext(process);
+	}
     }
 }
 
@@ -4164,6 +4262,9 @@ int main_emulator(int argc, int *argv) {
     parse_args(argc, argv);
 
     loadBinary();
+
+    NUM_BINARIES=1;
+    duplicateBinary(NUM_BINARIES-1);
 
     *(registers+REG_GP) = binaryLength;
 
