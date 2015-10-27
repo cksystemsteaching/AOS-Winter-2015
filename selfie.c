@@ -4295,7 +4295,7 @@ void create_ready_queue(int n, int m){
 		}
 		else{
 			new_process = create_process(pid, new_reg, new_mem, reg_hi, reg_lo);
-			ready_queue = addToList(ready_queue, new_process);
+			ready_queue = addToList(ready_queue, (int) new_process);
 		}
 		pid = pid + 1;
 	}
@@ -4312,7 +4312,7 @@ void printListPID(int *list) {
 
 	while(counter >= 0) {
 		node = (int*) getNodeFromList(list, counter);
-		process = *(node+1);
+		process = (int*) *(node+1);
 		number = *(process);
 		Buffer = (int*)malloc(4*10);
     	print(itoa(number, Buffer, 10, 0));
@@ -4335,7 +4335,7 @@ void printListPC(int *list) {
 
 	while(counter >= 0) {
 		node = (int*) getNodeFromList(list, counter);
-		process = *(node+1);
+		process = (int*) *(node+1);
 		number = *(process+1);
 		Buffer = (int*)malloc(4*10);
     	print(itoa(number, Buffer, 10, 0));
@@ -4357,10 +4357,10 @@ void schedule_and_switch(){
 	//else the processes have to be switched so that the next process from the ready queue is allowed to run
 	else{
 		// 1. Saving the states of the running process in the ready queue
-		ready_queue = addToList(ready_queue, running_process);
+		ready_queue = addToList(ready_queue, (int) running_process);
 		// 2. Switching the running process and get the first of the ready queue
-		node = getNodeFromList(ready_queue, size-1);
-		running_process = *(node+1);
+		node = (int*) getNodeFromList(ready_queue, size);
+		running_process = (int*) *(node+1);
 
 		// 3. Delete the first Process from ready queue because it is the running process
 		ready_queue = deleteFirstNodeFromList(ready_queue);			
