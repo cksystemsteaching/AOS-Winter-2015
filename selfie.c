@@ -3631,7 +3631,7 @@ void syscall_sched_yield() {
     process_switch(process);
     g_ticks = 0;
 
-    if (debug_syscalls)
+    if (DEBUG_1)
         printString('[','O','S',']',' ','c', 'a', 'l','l',' ','y','i','e','l','d',CHAR_LF,0,0,0,0);
 }
 
@@ -3653,24 +3653,31 @@ void fct_syscall() {
 
     if (*(registers+REG_V0) == SYSCALL_EXIT) {
         syscall_exit();
+        pc = pc + 1;
     } else if (*(registers+REG_V0) == SYSCALL_READ) {
         syscall_read();
+        pc = pc + 1;
     } else if (*(registers+REG_V0) == SYSCALL_WRITE) {
         syscall_write();
+        pc = pc + 1;
     } else if (*(registers+REG_V0) == SYSCALL_OPEN) {
         syscall_open();
+        pc = pc + 1;
     } else if (*(registers+REG_V0) == SYSCALL_MALLOC) {
         syscall_malloc();
+        pc = pc + 1;
     } else if (*(registers+REG_V0) == SYSCALL_GETCHAR) {
         syscall_getchar();
+        pc = pc + 1;
     // A2
     } else if(*(registers+REG_V0) == SYSCALL_SCHED_YIELD) {
         syscall_sched_yield();
     } else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
+        pc = pc + 1;
     }
 
-    pc = pc + 1;
+    //pc = pc + 1;
 }
 
 void fct_nop() {
@@ -4297,7 +4304,7 @@ void initSegmentation(int argc, int *argv, int *cstar_argv) {
 
     MAX_SEGMENTS = 32;
     SEGMENT_SIZE = 1024 * 1024 / 4; // WORDS
-    TIME_SLICE = 64;
+    TIME_SLICE = 15;
     NUMBER_OF_INSTANCES = 32;
     // Parse the command line argument and get the FILENAME
     FILENAME = parse_args(argc, argv, cstar_argv);
@@ -4306,7 +4313,7 @@ void initSegmentation(int argc, int *argv, int *cstar_argv) {
 
     // Initialize our segment table
     g_segment_counter = 0;
-    g_segment_table = struct_init(MAX_SEGMENTS - 1);
+    g_segment_table = struct_init(MAX_SEGMENTS);
     
     allocateMachineMemory(MEMORY_SIZE*4); // BYTES
     // First process to run
@@ -5017,6 +5024,7 @@ void list_test() {
     int *process;
     int *data;
     int id;
+    int i;
 
     printString('r','e','a','d','y',' ','l','i','s','t',' ','t','e','s','t',10,0,0,0,0);
     putchar(10);
@@ -5042,7 +5050,12 @@ void list_test() {
     print_process_list(list);
     
     // Test yield system call
-    sched_yield();
+    i = 0;
+    while(i < 10) {
+        putchar('x');
+        sched_yield();
+        i = i + 1;
+    }
 
     printString('p','o','p',' ','f','r','o','n','t',' ',0,0,0,0,0,0,0,0,0,0);
     data = list_entry_get_data(list_pop_front(list));
@@ -5076,6 +5089,9 @@ void list_test() {
     printString('p','u','s','h',' ','f','r','o','n','t',' ','2',10,0,0,0,0,0,0,0);
     list_push_front(list, process);
     print_process_list(list);
+
+    // Test yield system call
+    sched_yield();
 
     process = process_init(3, registers, 0, 0, 0);
     
@@ -5126,6 +5142,9 @@ void list_test() {
     printString('p','u','s','h',' ','f','r','o','n','t',' ','5',10,0,0,0,0,0,0,0);
     list_push_front(list, process);
     print_process_list(list);
+    
+    // Test yield system call
+    sched_yield();
     
     printString('p','o','p',' ','b','a','c','k',' ',0,0,0,0,0,0,0,0,0,0,0);
     data = list_entry_get_data(list_pop_back(list));
