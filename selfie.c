@@ -423,6 +423,39 @@ void initScanner () {
     mayBeINTMINConstant = 0;
 }
 
+
+// -----------------------------------------------------------------
+// ----------------------------- STRUCT ----------------------------
+// -----------------------------------------------------------------
+
+int  *struct_init(int size);
+
+int  *struct_get_element_at(int *array, int i);
+void struct_set_element_at(int *array, int i, int *value);
+
+void struct_test();
+
+// -----------------------------------------------------------------
+// ----------------------------- SEGMENT ---------------------------
+// -----------------------------------------------------------------
+
+int  *segment_init(int *start, int size);
+
+// Getters
+int  *segment_get_start(int *segment);
+int  segment_get_size(int *segment);
+
+// Setters
+void segment_set_start(int *segment, int *start);
+void segment_set_size(int *segment, int size);
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT2 --------------------------
+// -----------------------------------------------------------------
+
+void initSegmentation(int argc, int *argv, int *cstar_argv);
+void process_get_segment(int *process, int segment_size, int *filename, int argc, int *argv);
+
 // -----------------------------------------------------------------
 // -------------------------- ASSIGNMENT1 --------------------------
 // -----------------------------------------------------------------
@@ -431,7 +464,7 @@ void initScanner () {
 int  *memcpy(int *source, int num);
 void printInt(int i);
 int int_length(int i);
-void init_readyqueue();
+void initReadyqueue();
 int  *process_schedule();
 void process_switch(int *process);
 
@@ -478,6 +511,8 @@ void list_entry_set_data(int *entry, int *data);
 void list_swap(int *list, int index1, int index2);
 // Sorts list by the field at FIELD_NR
 void list_sort_by(int *list, int field_nr);
+// Return the entry with VALUE at FIELD_NR
+int *list_find_entry_by(int *list, int value, int field_nr);
 
 void list_test();
 
@@ -485,22 +520,22 @@ void list_test();
 // ---------------------------- PROCESS ----------------------------
 // -----------------------------------------------------------------
 
-int  *process_init(int id, int *registers, int *memory, int reg_hi, int reg_lo);
+int  *process_allocate();
+int  *process_init(int id, int *registers, int reg_hi, int reg_lo, int seg_nr);
 
 int  process_get_id(int *process);
 int  process_get_pc(int *process);
 int  *process_get_registers(int *process);
-int  *process_get_memory(int *process);
 int  process_get_reg_hi(int *process);
 int  process_get_reg_lo(int *process);
-
+int  process_get_seg_nr(int *process);
 
 void process_set_id(int *process, int id);
 void process_set_pc(int *process, int pc);
 void process_set_registers(int *process, int *registers);
-void process_set_memory(int *process, int *memory);
 void process_set_reg_hi(int *process, int reg_hi);
 void process_set_reg_lo(int *process, int reg_lo);
+void process_set_seg_nr(int *process, int seg_nr);
 
 void print_process_list(int *list);
 
@@ -509,11 +544,16 @@ void print_process_list(int *list);
 
 int  *g_readyqueue;
 int  *g_running_process;
+int  *g_segment_table;
 int  g_ticks;
+int  g_segment_counter;
 
 int  NUMBER_OF_INSTANCES;
 int  TIME_SLICE;
 int  MEMORY_SIZE;
+int  *FILENAME;
+int  MAX_SEGMENTS;
+int  SEGMENT_SIZE;
 
 // -----------------------------------------------------------------
 // ------------------------- SYMBOL TABLE --------------------------
@@ -845,6 +885,13 @@ void syscall_getchar();
 
 void emitPutchar();
 
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT2 --------------------------
+// -----------------------------------------------------------------
+
+void emitSchedYield();
+void syscall_sched_yield();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int SYSCALL_EXIT;
@@ -853,6 +900,8 @@ int SYSCALL_WRITE;
 int SYSCALL_OPEN;
 int SYSCALL_MALLOC;
 int SYSCALL_GETCHAR;
+// A2
+int SYSCALL_SCHED_YIELD;
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -863,6 +912,8 @@ void initSyscalls() {
     SYSCALL_OPEN    = 4005;
     SYSCALL_MALLOC  = 5001;
     SYSCALL_GETCHAR = 5002;
+    // A2
+    SYSCALL_SCHED_YIELD = 5003;
 }
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -2940,6 +2991,8 @@ int main_compiler() {
     emitMalloc();
     emitGetchar();
     emitPutchar();
+    // A2
+    emitSchedYield();
 
     gr_cstar();     // invoke compiler
     emitBinary();
@@ -3330,7 +3383,7 @@ void syscall_read() {
     address = *(registers+REG_A1) / 4;
     fd      = *(registers+REG_A0);
 
-    buffer = memory + address;
+    buffer = memory + address; // A2: Add memory + start of the segment?
 
     size = read(fd, buffer, count);
 
@@ -3386,7 +3439,7 @@ void syscall_write() {
     address = *(registers+REG_A1) / 4;
     fd      = *(registers+REG_A0);
 
-    buffer = memory + address;
+    buffer = memory + address; // A2: Add memory + start of the segment?
 
     size = write(fd, buffer, size);
 
@@ -3545,6 +3598,43 @@ void emitPutchar() {
     emitRFormat(OP_SPECIAL, REG_LINK, 0, 0, FCT_JR);
 }
 
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT2 --------------------------
+// -----------------------------------------------------------------
+
+void emitSchedYield() {
+    int *label;
+
+    // "sched_yield"
+    label = createString('s','c','h','e','d','_','y','i','e','l','d',0,0,0,0,0,0,0,0,0);
+
+    // Create the symbol table entry fpr sched_yield
+    createSymbolTableEntry(GLOBAL_TABLE, label, codeLength, FUNCTION, INT_T);
+
+    // sched_yield doesn't have any arguments
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SCHED_YIELD);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_LINK, 0, 0, FCT_JR);
+}
+
+void syscall_sched_yield() {
+    int *process;
+
+    pc = pc + 1;
+    process = process_schedule();
+    process_switch(process);
+    g_ticks = 0;
+
+    if (debug_syscalls)
+        printString('[','O','S',']',' ','c', 'a', 'l','l',' ','y','i','e','l','d',CHAR_LF,0,0,0,0);
+}
+
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
 // ---------------------     E M U L A T O R   ---------------------
@@ -3573,6 +3663,9 @@ void fct_syscall() {
         syscall_malloc();
     } else if (*(registers+REG_V0) == SYSCALL_GETCHAR) {
         syscall_getchar();
+    // A2
+    } else if(*(registers+REG_V0) == SYSCALL_SCHED_YIELD) {
+        syscall_sched_yield();
     } else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
     }
@@ -4097,13 +4190,6 @@ int* parse_args(int argc, int *argv, int *cstar_argv) {
     int memorySize;
 
     memorySize = atoi((int*)*(cstar_argv+2)) * 1024 * 1024 / 4;
-    
-    MEMORY_SIZE = memorySize; // A1: Need to be known (for allocation purposes)
-
-    allocateMachineMemory(memorySize*4);
-
-    // initialize stack pointer
-    *(registers+REG_SP) = (memorySize - 1) * 4;
 
     debug_boot(memorySize);
 
@@ -4190,49 +4276,105 @@ void up_copyArguments(int argc, int *argv) {
 }
 
 int main_emulator(int argc, int *argv, int *cstar_argv) {
+
     initInterpreter();
+    initReadyqueue();
+    initSegmentation(argc, argv, cstar_argv);
 
-    *(registers+REG_GP) = loadBinary(parse_args(argc, argv, cstar_argv));
-
-    *(registers+REG_K1) = *(registers+REG_GP);
-
-    up_copyArguments(argc-3, argv+3);
-
-    init_readyqueue(); // A1
     run();
 
     exit(0);
 }
 
 // -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT2 --------------------------
+// -----------------------------------------------------------------
+
+void initSegmentation(int argc, int *argv, int *cstar_argv) {
+    int *process;
+    int segment_nr;
+    int i;
+
+    MAX_SEGMENTS = 32;
+    SEGMENT_SIZE = 1024 * 1024 / 4; // WORDS
+    TIME_SLICE = 64;
+    NUMBER_OF_INSTANCES = 32;
+    // Parse the command line argument and get the FILENAME
+    FILENAME = parse_args(argc, argv, cstar_argv);
+    // For now we allocate the segments of equal size
+    MEMORY_SIZE = MAX_SEGMENTS*SEGMENT_SIZE;
+
+    // Initialize our segment table
+    g_segment_counter = 0;
+    g_segment_table = struct_init(MAX_SEGMENTS - 1);
+    
+    allocateMachineMemory(MEMORY_SIZE*4); // BYTES
+    // First process to run
+    g_running_process = process_allocate();
+    process_set_id(g_running_process, 0);
+    process_get_segment(g_running_process, SEGMENT_SIZE, FILENAME, argc, argv);
+
+    i = 1;
+    while(i < NUMBER_OF_INSTANCES) {
+        // Initialize the process
+        process = process_allocate();
+        process_set_id(process, i);
+        // Get segment
+        process_get_segment(process, SEGMENT_SIZE, FILENAME, argc, argv);
+        list_push_front(g_readyqueue, process);
+        i = i + 1;
+    }
+
+    // Set MEMORY and REGISTERS to the initial segment
+    registers = process_get_registers(g_running_process);
+    // Get the segment
+    segment_nr = process_get_seg_nr(g_running_process);
+    memory = segment_get_start(struct_get_element_at(g_segment_table, segment_nr));
+}
+
+void process_get_segment(int *process, int segment_size, int *filename, int argc, int *argv) {
+    int *segment;
+    int *new_registers;
+    int bump;
+
+    // Allocate 32 registers for the new process
+    new_registers = memcpy(registers, 32);
+    // Set the stack pointer to the top of the segment
+    *(new_registers + REG_SP) = (SEGMENT_SIZE - 1) * 4;
+
+    // Load the binary into memory and increase the global pointer
+    bump = loadBinary(filename);
+    *(new_registers + REG_GP) = bump;
+    *(new_registers + REG_K1) = *(new_registers + REG_GP);
+
+    // Add new the new segment to our segment table
+    segment = segment_init(memory, segment_size);
+    struct_set_element_at(g_segment_table, g_segment_counter, segment);
+
+    //process = process_init(id, new_registers, reg_hi, reg_lo, g_segment_counter);
+    process_set_registers(process, new_registers);
+    process_set_reg_hi(process, reg_hi);
+    process_set_reg_lo(process, reg_lo);
+    // Store the segment number
+    process_set_seg_nr(process, g_segment_counter);
+
+    // Required otherwise UP_COPYARGUMENTS wouldn't work
+    registers = new_registers;
+    // Copy Argument list onto the stack
+    up_copyArguments(argc-3, argv+3);
+
+    // Next Segment is at base + SEGMENT_SIZE
+    memory = memory + segment_size;
+    g_segment_counter = g_segment_counter + 1;
+}
+
+// -----------------------------------------------------------------
 // -------------------------- ASSIGNMENT1 --------------------------
 // -----------------------------------------------------------------
 
-void init_readyqueue() {
-    int *process;
-    int *new_registers;
-    int *new_memory;
-    int i;
-
+void initReadyqueue() {
     g_ticks = 0;
     g_readyqueue = list_init();
-    NUMBER_OF_INSTANCES = 12; // TODO: Make dynamic
-    TIME_SLICE = 93; // TODO: Make dynamic
-
-    i = 0;
-    while(i < NUMBER_OF_INSTANCES) {
-        new_registers = memcpy(registers, 32); // 32 Registers
-        new_memory = memcpy(memory, MEMORY_SIZE);
-
-        if(i == 0) {
-            g_running_process = process_init(i, new_registers, new_memory, reg_hi, reg_lo);
-        } else {
-            process = process_init(i, new_registers, new_memory, reg_hi, reg_lo);
-            list_push_front(g_readyqueue, process);
-        }
-
-        i = i + 1;
-    }
 }
 
 // Returns the next process to run
@@ -4262,6 +4404,7 @@ int *process_schedule() {
 
 // Switches to PROCESS
 void process_switch(int *process) {
+    int segment_nr;
 
     if(process == g_running_process)
         return;
@@ -4269,16 +4412,18 @@ void process_switch(int *process) {
     // Save the state of the current process
     process_set_pc(g_running_process, pc);
     process_set_registers(g_running_process, registers);
-    process_set_memory(g_running_process, memory);
     process_set_reg_hi(g_running_process, reg_hi);
     process_set_reg_lo(g_running_process, reg_lo);
 
     list_push_front(g_readyqueue, g_running_process);
 
+    // Get the new segment
+    segment_nr = process_get_seg_nr(process);
+    memory = segment_get_start(struct_get_element_at(g_segment_table, segment_nr));
+
     // Switch to PROCESS
     pc = process_get_pc(process);
     registers = process_get_registers(process);
-    memory = process_get_memory(process);
     reg_hi = process_get_reg_hi(process);
     reg_lo = process_get_reg_lo(process);
 
@@ -4323,6 +4468,64 @@ int int_length(int i) {
     }
 
     return length;
+}
+
+// -----------------------------------------------------------------
+// ----------------------------- STRUCT ----------------------------
+// -----------------------------------------------------------------
+
+int *struct_init(int size) {
+    int *array;
+
+    array = (int*)malloc(size * 4);
+
+    return array;
+}
+
+int *struct_get_element_at(int *array, int i) {
+    return (int*)*(array + i);
+}
+
+void struct_set_element_at(int *array, int i, int *value) {
+    *(array + i) = (int)value;
+}
+
+// -----------------------------------------------------------------
+// ----------------------------- SEGMENT ---------------------------
+// -----------------------------------------------------------------
+
+int *segment_init(int *start, int size) {
+    int *segment;
+
+    // process:
+    // +----+-------+
+    // |  0 | start |
+    // |  1 | size  |
+    // +----+-------+
+
+    segment = (int*)malloc(2 * 4);
+    segment_set_start(segment, start);
+    segment_set_size(segment, size);
+
+    return segment;
+}
+
+// Getters
+int *segment_get_start(int *segment) {
+    return (int*)*segment;
+}
+
+int segment_get_size(int *segment) {
+    return *(segment + 1);
+}
+
+// Setters
+void segment_set_start(int *segment, int *start) {
+    *segment = (int)start;
+}
+
+void segment_set_size(int *segment, int size) {
+    *(segment + 1) = pc;
 }
 
 // -----------------------------------------------------------------
@@ -4451,11 +4654,13 @@ int *list_pop_front(int *list) {
     next = list_entry_get_next(head);
     // Set new head to NEXT
     list_set_head(list, next);
-    // The new head doesn't have a previous element
-    list_entry_set_prev(next, 0);
     // Reduce size by one
     size = list_get_size(list);
     list_set_size(list, size - 1);
+    
+    if(list_is_empty(list) == 0)
+        // The new head doesn't have a previous element
+        list_entry_set_prev(next, 0);
     
     return head;
 }
@@ -4472,11 +4677,13 @@ int *list_pop_back(int *list) {
     prev = list_entry_get_prev(tail);
     // Set new tail to PREV
     list_set_tail(list, prev);
-    // The new tail doesn't have a next element
-    list_entry_set_next(prev, 0);
     size = list_get_size(list);
     // Reduce size by one
     list_set_size(list, size - 1);
+    
+    if(list_is_empty(list) == 0)
+        // The new tail doesn't have a next element
+        list_entry_set_next(prev, 0);
     
     return tail;
 }
@@ -4559,6 +4766,28 @@ int *list_get_entry_at(int *list, int index) {
     }
 
     return 0;
+}
+
+
+// Return the entry with VALUE at FIELD_NR
+int *list_find_entry_by(int *list, int value, int field_nr) {
+    int *head;
+    int current_value;
+
+    // In all but the first recursion steps this basically calls list_entry_get_next(...)!
+    // This works because the NEXT element in a list entry and the HEAD element in the 
+    // actual list are at the same spot (FIELD_NR 0)!
+    head = list_get_head(list);
+
+    if((int)head == 0)
+        return 0;
+
+    current_value = *(list_entry_get_data(head + field_nr));
+
+    if(current_value == value)
+        return head;
+
+    list_find_entry_by(head, value, field_nr);
 }
 
 int list_is_in_bounds(int *list, int index) {
@@ -4654,7 +4883,15 @@ void list_entry_set_data(int *entry, int *data) {
 // ---------------------------- PROCESS ----------------------------
 // -----------------------------------------------------------------
 
-int *process_init(int id, int *registers, int *memory, int reg_hi, int reg_lo) {
+int *process_allocate() {
+    int *process;
+
+    process = (int*)malloc(6 * 4);
+
+    return process;
+}
+
+int *process_init(int id, int *registers, int reg_hi, int reg_lo, int seg_nr) {
     int *process;
 
     // process:
@@ -4662,18 +4899,18 @@ int *process_init(int id, int *registers, int *memory, int reg_hi, int reg_lo) {
     // |  0 | id               |
     // |  1 | pc               |
     // |  2 | ptr to registers |
-    // |  3 | ptr to memory    |
-    // |  4 | reg_hi           |
-    // |  5 | reg_lo           |
+    // |  3 | reg_hi           |
+    // |  4 | reg_lo           |
+    // |  5 | seg_nr           |
     // +----+------------------+
 
     process = (int*)malloc(6 * 4);
     process_set_id(process, id);
     process_set_pc(process, 0); // Initially always 0
     process_set_registers(process, registers);
-    process_set_memory(process, memory);
     process_set_reg_hi(process, reg_hi);
     process_set_reg_lo(process, reg_lo);
+    process_set_seg_nr(process, seg_nr);
 
     return process;
 }
@@ -4691,15 +4928,16 @@ int *process_get_registers(int *process) {
     return (int*)*(process + 2);
 }
 
-int *process_get_memory(int *process) {
-    return (int*)*(process + 3);
-}
-
 int process_get_reg_hi(int *process) {
-    return *(process + 4);
+    return *(process + 3);
 }
 
 int process_get_reg_lo(int *process) {
+    return *(process + 4);
+}
+
+// A2
+int process_get_seg_nr(int *process) {
     return *(process + 5);
 }
 
@@ -4716,16 +4954,17 @@ void process_set_registers(int *process, int *registers) {
     *(process + 2) = (int)registers;
 }
 
-void process_set_memory(int *process, int *memory) {
-    *(process + 3) = (int)memory;
-}
-
 void process_set_reg_hi(int *process, int reg_hi) {
-    *(process + 4) = reg_hi;
+    *(process + 3) = reg_hi;
 }
 
 void process_set_reg_lo(int *process, int reg_lo) {
-    *(process + 5) = reg_lo;
+    *(process + 4) = reg_lo;
+}
+
+// A2
+void process_set_seg_nr(int *process, int seg_nr) {
+    *(process + 5) = seg_nr;
 }
 
 void print_process_list(int *list) {
@@ -4756,6 +4995,23 @@ void print_process_list(int *list) {
 // ---------------------------- TESTS ------------------------------
 // -----------------------------------------------------------------
 
+void struct_test() {
+    // int *stru;
+    // int *segment;
+
+    // printString('s','t','r','u','c','t',' ','t','e','s','t',0,0,0,0,0,0,0,0,0);
+    // putchar(10);
+
+    // stru = struct_init(22);
+    // segment = segment_init(22, memory);
+
+    // struct_set_element_at(stru, 12, segment);
+    // segment = struct_get_element_at(stru, 12);
+
+    // printInt((int)segment_get_start(segment));
+    // putchar(10);
+}
+
 void list_test() {
     int *list;
     int *process;
@@ -4766,7 +5022,7 @@ void list_test() {
     putchar(10);
 
     list = list_init();
-    process = process_init(1, registers, memory, 0, 0);
+    process = process_init(1, registers, 0, 0, 0);
     
     printString('p','u','s','h',' ','f','r','o','n','t',' ','1',10,0,0,0,0,0,0,0);
     list_push_front(list, process);
@@ -4785,6 +5041,9 @@ void list_test() {
     list_push_front(list, process);
     print_process_list(list);
     
+    // Test yield system call
+    sched_yield();
+
     printString('p','o','p',' ','f','r','o','n','t',' ',0,0,0,0,0,0,0,0,0,0);
     data = list_entry_get_data(list_pop_front(list));
     id = process_get_id(data);
@@ -4812,31 +5071,57 @@ void list_test() {
     putchar(10);
     print_process_list(list);
 
-    process = process_init(2, registers, memory, 0, 0);
+    process = process_init(2, registers, 0, 0, 0);
     
     printString('p','u','s','h',' ','f','r','o','n','t',' ','2',10,0,0,0,0,0,0,0);
     list_push_front(list, process);
     print_process_list(list);
 
-    process = process_init(3, registers, memory, 0, 0);
+    process = process_init(3, registers, 0, 0, 0);
     
     printString('p','u','s','h',' ','b','a','c','k',' ','3',10,0,0,0,0,0,0,0,0);
     list_push_back(list, process);
     print_process_list(list);
 
-    process = process_init(9, registers, memory, 0, 0);
+    process = process_init(9, registers, 0, 0, 0);
 
     printString('p','u','s','h',' ','b','a','c','k',' ','9',10,0,0,0,0,0,0,0,0);
     list_push_back(list, process);
     print_process_list(list);
 
-    process = process_init(4, registers, memory, 0, 0);
+    process = process_init(4, registers, 0, 0, 0);
     
     printString('p','u','s','h',' ','f','r','o','n','t',' ','4',10,0,0,0,0,0,0,0);
     list_push_front(list, process);
     print_process_list(list);
 
-    process = process_init(5, registers, memory, 0, 0);
+    printString('f','i','n','d',' ','e','n','t','r','y',' ','b','y',10,0,0,0,0,0,0);
+    data = list_entry_get_data(list_find_entry_by(list, 9, 0));
+    id = process_get_id(data);
+    printInt(id);
+    putchar(10);
+
+    data = list_entry_get_data(list_find_entry_by(list, 4, 0));
+    id = process_get_id(data);
+    printInt(id);
+    putchar(10);
+
+    data = list_entry_get_data(list_find_entry_by(list, 2, 0));
+    id = process_get_id(data);
+    printInt(id);
+    putchar(10);
+
+    data = list_entry_get_data(list_find_entry_by(list, 22, 0));
+    id = process_get_id(data);
+    printInt(id);
+    putchar(10);
+
+    data = list_entry_get_data(list_find_entry_by(list, 3, 0));
+    id = process_get_id(data);
+    printInt(id);
+    putchar(10);
+
+    process = process_init(5, registers, 0, 0, 0);
     
     printString('p','u','s','h',' ','f','r','o','n','t',' ','5',10,0,0,0,0,0,0,0);
     list_push_front(list, process);
@@ -4849,13 +5134,13 @@ void list_test() {
     putchar(10);
     print_process_list(list);
 
-    process = process_init(6, registers, memory, 0, 0);
+    process = process_init(6, registers, 0, 0, 0);
     
     printString('i','n','s','e','r','t',' ','6',' ','a','t',' ','2',10,0,0,0,0,0,0);
     list_insert_at(list, 2, process);
     print_process_list(list);
 
-    process = process_init(7, registers, memory, 0, 0);
+    process = process_init(7, registers, 0, 0, 0);
     
     printString('i','n','s','e','r','t',' ','7',' ','a','t',' ','0',10,0,0,0,0,0,0);
     list_insert_at(list, 0, process);
@@ -4865,7 +5150,7 @@ void list_test() {
     list_sort_by(list, 0);
     print_process_list(list);
 
-    process = process_init(8, registers, memory, 0, 0);
+    process = process_init(8, registers, 0, 0, 0);
     
     printString('i','n','s','e','r','t',' ','8',' ','a','t',' ','-','1',10,0,0,0,0,0);
     list_insert_at(list, -1, process);
@@ -5005,6 +5290,7 @@ int main(int argc, int *argv) {
             }
             else if (*(firstParameter+1) == 't') {
                 list_test();
+                struct_test();
             }
             else {
                 exit(-1);
