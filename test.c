@@ -7,6 +7,7 @@ int INT_MIN;
 int INT_MAX;
 int result;
 int *power_of_two_table;
+int a;
 
 
 
@@ -227,12 +228,14 @@ int main(){
     print(itoa(3, string_buffer, 10, 0));
     print(itoa(4, string_buffer, 10, 0));
     print(itoa(5, string_buffer, 10, 0));
-    
+    putchar(CHAR_LF);
+    yield();
     print(itoa(6, string_buffer, 10, 0));
     print(itoa(7, string_buffer, 10, 0));
     print(itoa(8, string_buffer, 10, 0));
     print(itoa(9, string_buffer, 10, 0));
     putchar(CHAR_LF);
+    yield();
 
 
     
