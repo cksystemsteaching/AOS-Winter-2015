@@ -60,5 +60,16 @@ This assignment deals with cooperative multitasking of _n_ processes in mipster 
 * Deadline: Oct 29, end of day
 
 
+Assignment 3: bootstrapping the kernel
+--------------------------------------
 
+At the end of this assignment you will have the operating system running on top if mipster along with other processes.
 
+* implement the operating system in selfie.c and provide a flag to execute the kernel code, e.g., -k, and run it 
+like `$ ./selfie -m 32 selfie.mips -k some_program.mips` where selfie is the gcc build of selfie, 
+selfie.mips -k is the mipster build running in kernel mode, and some_program.mips is the initial process 
+loaded by the operating system, e.g., a shell.
+* whenever a trap (e.g. a syscall instruction) or an interrupt (e.g. scheduling timer) happens, the operating is invoked instead of handling the trap or interrupt by the emulator. However, the OS cannot modify the machine state directly, i.e., modifying the memory pointer and registers array is not possible. Therefore:
+* provide a special system call, e.g., switch(int previous_process, int next_process) in the emulator that is invoked by the operating system only and modifies the machine state. One issue remains: after the OS invokes _switch_, the OS process must be reset to interrupt-trap handling mode. You can rely on the following convention: mipster starts executing a binay at address 0x0, the main method of selfie.c. Resetting the PC of the OS process to 0x0 after _switch_ will reset the OS but not its heap and globals. The OS stack must be reset as well. Important: _selfie -k_ must start with interrupt/trap handling. If no interrupt or trap is to be handled, the OS switches to the first ready process. If not ready process exists, the OS loads _some_program.mips_ or terminates.
+
+* Deadline: Nov 5, end of day
