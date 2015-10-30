@@ -25,11 +25,13 @@ cast             = "(" type ")" .
 
 call             = identifier "(" [ expression { "," expression } ] ")" .
 
+constant         = integer | "'" ascii_character "'" .
+
 factor           = [ cast ] 
                     ( [ "*" ] ( identifier | "(" expression ")" ) |
                       call |
-                      integer |
-                      "'" ascii_character "'" ) .
+                      constant |
+                      """ { ascii_character } """ ) .
 
 term             = factor { ( "*" | "/" | "%" ) factor } .
 
@@ -50,8 +52,8 @@ if               = "if" "(" expression ")"
 
 return           = "return" [ expression ] .
 
-statement        = ( [ "*" ] identifier |
-                     "*" "(" identifier [ "+" ( integer | identifier ) ] ")" ) "=" expression ";" |
+statement        = ( [ "*" ] identifier | "*" "(" expression ")" ) "="
+                      expression ";" |
                     call ";" | 
                     while | 
                     if | 
@@ -62,5 +64,6 @@ variable         = type identifier .
 procedure        = "(" [ variable { "," variable } ] ")" 
                     ( ";" | "{" { variable ";" } { statement } "}" ) .
 
-cstar            = { type identifier ";" | ( "void" | type ) identifier procedure } .
+cstar            = { type identifier [ "=" [ cast ] [ "-" ] constant ] ";" |
+                   ( "void" | type ) identifier procedure } .
 ```
