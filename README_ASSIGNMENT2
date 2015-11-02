@@ -1,0 +1,95 @@
+##########################################################
+## Assignment 2: Memory segmentation, yield system call ##
+##########################################################
+This assignment deals with cooperative multitasking of n processes in mipster using a single instance of physical memory.
+
+again, duplicate the process state n times
+but, do not duplicate the whole main memory
+instead, split the main memory into segments by implementing a segment table in mipster
+each process has an entry in the segment table for the segment start address and segment size
+design the segment table for constant time access
+translate the addresses of read and write operations to memory
+
+implement cooperative multitasking through a yield system call, i.e., a user process calling sched_yield() will cause the OS to re-schedule
+
+implement a simple user program that demonstrates yielding, e.g, yield each time after printing a counter to the console
+Deadline: Oct 29, end of day
+
+
+
+
+
+To Compile, please follow these steps:
+======================================
+1. install ubuntu 32bit lts server edition, apt-get install gcc.
+2. see https://github.com/mistay/AOS-Winter-2015/tree/selfie-master for how to get selfie up and running
+3. git clone repro from https://github.com/mistay/AOS-Winter-2015.git or, if pull request was accepted from
+   https://github.com/cksystemsteaching/AOS-Winter-2015.git
+4. change into cloned directory and do the following:
+
+
+
+
+Compile and Run:
+================
+$ touch count
+$ ./selfie -c count.c -o count
+./selfie: this is selfie's cstarc compiling count.c
+./selfie: writing code into output file count
+$ gcc selfie.c -o selfie && ./selfie -l count -m 32
+./selfie: loading code from input file count
+./selfie: this is selfie's mipster executing count with 32MB of memory
+000111222333444555666777888999:::;;;<<<===>>>???@@@AAABBBCCCDDDEEEFFFGGGHHHIIIJJJKKKLLLMMMNNNOOOPPPQQQRRRSSSTTTUUUVVVWWWXXXYYYcount: exiting with error code 7
+$
+
+
+now with yield syscall:
+$ gcc selfie.c -o selfie && ./selfie -l count -m 32  
+./selfie: loading code from input file count
+./selfie: this is selfie's mipster executing count with 32MB of memory
+0y0y0y1y1y1y2y2y2y3y3y3y4y4y4y5y5y5y6y6y6y7y7y7y8y8y8y9y9y9y:y:y:y;y;y;y<y<y<y=y=y=y>y>y>y?y?y?y@y@y@yAyAyAyByByByCyCyCyDyDyDyEyEyEyFyFyFyGyGyGyHyHyHyIyIyIyJyJyJyKyKyKyLyLyLyMyMyMyNyNyNyOyOyOyPyPyPyQyQyQyRyRyRySySySyTyTyTyUyUyUyVyVyVyWyWyWyXyXyXyYyYyYycount: exiting with error code 7
+
+
+Interpretation and Explanation of what happened
+===============================================
+selfie's mipster loads 3 processes into its *memory.
+all of the processes get 1Meg of RAM each, segmented into segments in *segmenttable.
+first demo output prints result when m=6 in selfie.c (context switch after 12 execute()s).
+second output demonstrates yielding (m=120): count yields each time after a char is printed.
+
+
+
+-- snip demo --
+$ more count.c
+int main() {
+	int i;
+	i=48;
+
+	// print '0' to 'Z' (in asciitable)
+	while (i<90) {
+		putchar(i);
+		i = i+1;
+		sched_yield();
+	}
+
+	exit(7);
+}
+-- /snip demo --
+
+
+Result
+======
+[OK] again, duplicate the process state n times
+[OK] but, do not duplicate the whole main memory
+[OK] instead, split the main memory into segments by implementing a segment table in mipster
+[OK] each process has an entry in the segment table for the segment start address and segment size
+[OK] design the segment table for constant time access
+[OK] translate the addresses of read and write operations to memory
+
+[OK] implement cooperative multitasking through a yield system call, i.e., a user process calling sched_yield() will cause the OS to re-schedule
+
+[OK] implement a simple user program that demonstrates yielding, e.g, yield each time after printing a counter to the console
+[NG, neede more time to work on this assignment] Deadline: Oct 29, end of day
+
+
+

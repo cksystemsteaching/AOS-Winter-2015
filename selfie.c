@@ -658,6 +658,10 @@ void syscall_open();
 void emitMalloc();
 void syscall_malloc();
 
+void emitYield();
+void syscall_sched_yield();
+
+
 void emitPutchar();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
@@ -668,6 +672,7 @@ int SYSCALL_WRITE   = 4004;
 int SYSCALL_OPEN    = 4005;
 int SYSCALL_MALLOC  = 5001;
 int SYSCALL_GETCHAR = 5002;
+int SYSCALL_YIELD   = 5003;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -693,6 +698,18 @@ int *memory;
 
 // ------------------------- INITIALIZATION ------------------------
 
+// processes: number of processes
+int processes;
+
+// process_id: current running process_id
+int process_id;
+
+// segment table, see comments below how it's structured
+int *segmenttable;
+
+// m: number of execute()s in run() are performed until scheduler switches to next process
+int m;
+
 void initMemory(int megabytes) {
     if (megabytes < 0)
         megabytes = 64;
@@ -701,7 +718,13 @@ void initMemory(int megabytes) {
 
     memorySize = megabytes * 1024 * 1024;
     memory     = malloc(memorySize);
+
+    // segmenttable holds up to 100 processes
+    segmenttable = malloc(100 * 2 * 4);
+    processes = 0;
 }
+
+
 
 // -----------------------------------------------------------------
 // ------------------------- INSTRUCTIONS --------------------------
@@ -810,6 +833,95 @@ void resetInterpreter() {
     reg_hi = 0;
     reg_lo = 0;
 }
+
+
+
+
+// SEGMENT TABLE
+// -------------
+// [process_id + 0] = offset
+// [process_id + 1] = length
+// e.g.
+// [0] = 0                           <-- offset process 0
+// [1] = 1M                          <-- length process 0
+// [2] = 1M (=0  offset + 1M length) <-- offset process 1
+// [3] = 4M                          <-- length process 1
+// [4] = 5M (=1M offset + 4M length)     ...
+// [5] = 2M
+// [6] = 7M (=5M offset + 2M length)
+// [7] = 1M
+// ...
+int getsegmentoffset(int process_id) {
+        return *(segmenttable + process_id * 2 + 0);
+}
+int getsegmentlength(int process_id) {
+        return *(segmenttable + process_id * 2 + 1);
+}
+void addsegment() {
+        if (processes == 0) {
+                *(segmenttable + 0) = 0;
+                *(segmenttable + 1) = 1024*1024; // 1Meg
+        } else {
+                *(segmenttable + 2 * processes + 0) =   *(segmenttable + 2 * (processes - 1) + 0) +
+                                                        *(segmenttable + 2 * (processes - 1) + 1);
+
+                *(segmenttable + 2 * processes + 1) =   1024*1024; // 1Meg
+        }
+}
+
+//void debugsegmenttable() {
+//	//printf("segmenttable\n");
+//	//printf("============\n");
+//	int i=0;
+//        for (i=0; i<6; i++) {
+//		//printf("seg[%d] %d\n",i , *(segmenttable + i));
+//	}
+//}
+
+void addprocess() {
+    int offsetlastsegment;
+    int i;
+    addsegment();
+//debugsegmenttable();
+    offsetlastsegment = getsegmentoffset(processes);
+    processes = processes + 1;
+    process_id = processes - 1;
+    
+    copyBinaryToMemory();
+
+    i = 0;
+    while (i<32) {
+	storeMemory(binaryLength + 4*i, 0);
+        i = i + 1;
+    }
+
+
+    // reg_lo
+    storeMemory(binaryLength + 4*32, 0);
+    // reg_hi
+    storeMemory(binaryLength + 4*33, 0);
+    // ir: dont care
+
+    // pc
+    storeMemory(binaryLength + 4*35, 0);
+
+    
+    storeMemory(binaryLength + 4*REG_SP, offsetlastsegment + getsegmentlength(process_id) - 4);
+    storeMemory(binaryLength + 4*REG_GP, binaryLength);
+    storeMemory(binaryLength + 4*REG_K1, binaryLength);
+
+    //ORI
+    //*(registers+REG_SP) = getsegmentlength(0) - 4;
+    //*(registers+REG_GP) = binaryLength;
+    //*(registers+REG_K1) = *(registers+REG_GP);
+
+
+}
+
+
+
+
+
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
 // ---------------------     L I B R A R Y     ---------------------
@@ -3152,6 +3264,7 @@ void compile() {
     emitOpen();
     emitMalloc();
     emitPutchar();
+    emitYield();
 
     // parser
     gr_cstar();
@@ -3497,8 +3610,12 @@ void emit() {
 }
 
 void load() {
+
     int fd;
+
     int numberOfReadBytes;
+
+    //printf("hello");
 
     fd = open(binaryName, 0, 0); // 0 = O_RDONLY
 
@@ -3533,8 +3650,14 @@ void load() {
             println();
         }
 
+//	//printf("numOfReadBytes: %d", numberOfReadBytes); 
+//	//printf("binaryLength: %d\n", binaryLength);
+
+
         if (numberOfReadBytes == 4)
             binaryLength = binaryLength + 4;
+	// selfieBUG? was, wenn nur 3 bytes (zB zum schluss) gelsesen werden, dann wird binaryLength nicht um 3 erhoeht..?!?
+	// vermutl nie ein issue da binary (bei code gemeration) immer %4==0 anz bytes groesze hat
     }
 }
 
@@ -3650,7 +3773,8 @@ void syscall_write() {
     vaddr = *(registers+REG_A1);
     fd    = *(registers+REG_A0);
 
-    buffer = memory + tlb(vaddr);
+    buffer = memory + tlb(vaddr) + getsegmentoffset(process_id);
+    //buffer = getsegmentoffset(process_id) + memory + tlb(vaddr);
 
     size = write(fd, buffer, size);
 
@@ -3660,7 +3784,7 @@ void syscall_write() {
         print(binaryName);
         print((int*) ": wrote ");
         print(itoa(size, string_buffer, 10, 0));
-        print((int*) " bytes from buffer at address ");
+        print((int*) " bytes from buffer at addressSZ ");
         print(itoa((int) buffer, string_buffer, 16, 8));
         print((int*) " into file with descriptor ");
         print(itoa(fd, string_buffer, 10, 0));
@@ -3766,6 +3890,33 @@ void syscall_malloc() {
         println();
     }
 }
+void emitYield() {
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "sched_yield", binaryLength, FUNCTION, INTSTAR_T, 0);
+
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
+
+    // remove the argument from the stack
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+
+
+    // load the correct syscall number and invoke syscall
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_YIELD);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // jump back to caller, return value is in REG_V0
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+
+}
+
+void syscall_sched_yield() {
+	printf("y");
+	fflush(stdout);
+	m = 120;
+}
 
 void emitPutchar() {
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "putchar", binaryLength, FUNCTION, INT_T, 0);
@@ -3804,11 +3955,24 @@ int tlb(int vaddr) {
 }
 
 int loadMemory(int vaddr) {
-    return *(memory + tlb(vaddr));
+    int offset;
+    offset = getsegmentoffset(process_id);
+
+//    //printf("load mem: v:%d phy:%d\n", vaddr, tlb(vaddr) + offset );
+//    fflush(stdout);    
+
+    return *(memory + tlb(vaddr) + offset );
+    //return *(memory + tlb(vaddr));
 }
 
 void storeMemory(int vaddr, int data) {
-    *(memory + tlb(vaddr)) = data;
+    int offset;
+    offset = getsegmentoffset(process_id);
+	
+////printf("mem2write @%d: %d\n", tlb(vaddr) + offset, data);
+//fflush(stdout);
+    *(memory + tlb(vaddr) + offset) = data;
+    //*(memory + tlb(vaddr) ) = data;
 }
 
 // -----------------------------------------------------------------
@@ -3831,6 +3995,8 @@ void fct_syscall() {
         syscall_open();
     } else if (*(registers+REG_V0) == SYSCALL_MALLOC) {
         syscall_malloc();
+    } else if (*(registers+REG_V0) == SYSCALL_YIELD) {
+        syscall_sched_yield();
     } else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
     }
@@ -4181,6 +4347,7 @@ void post_debug() {
 }
 
 void fetch() {
+//    //printf("fetch()");
     ir = loadMemory(pc);
 }
 
@@ -4230,13 +4397,69 @@ void execute() {
     }
 }
 
+
+void saveContext(int process_id) {
+	int i;
+	i=0;
+	while (i<32) {
+//		//printf("storing mem (addr: %d)\n", binaryLength + i * 4);
+//		fflush(stdout);
+		storeMemory(binaryLength + i * 4, *(registers + i ));
+		i = i + 1;
+//		//printf("done storing mem\n");
+//		fflush(stdout);
+	}
+	storeMemory(binaryLength + 4*32, reg_lo);
+	storeMemory(binaryLength + 4*33, reg_hi);
+	storeMemory(binaryLength + 4*34, ir);
+	storeMemory(binaryLength + 4*35, pc);
+
+//	//printf("done saving\n");
+//	fflush(stdout);
+}
+void loadContext(int process_id) {
+        int i;
+	i=0;
+	while (i<32) {
+		*(registers + i) = loadMemory(binaryLength + i * 4);
+		i = i + 1;
+	}
+	reg_lo = 	loadMemory(binaryLength + 4*32);
+	reg_hi = 	loadMemory(binaryLength + 4*33);
+	ir = 		loadMemory(binaryLength + 4*34);
+	pc = 		loadMemory(binaryLength + 4*35);
+
+//	//printf("done loading\n");
+//	fflush(stdout);
+
+}
+
 void run() {
+	m=0;
+	process_id = 0;
     while (1) {
+//	//printf("pc[%d]: %d\n", process_id, pc);
         fetch();
         decode();
         pre_debug();
         execute();
         post_debug();
+
+	m = m+1;
+        if (m > 120) {
+//		//printf("now switching context\n");
+//		fflush(stdout);
+		m = 0;
+		saveContext(process_id);
+		process_id = process_id + 1;
+		if (process_id == processes ) {
+//			//printf("-A(%d)-", pc);
+			process_id = 0;
+		}
+		////printf("pid: %d\n", process_id);
+		loadContext(process_id);
+
+	}
     }
 }
 
@@ -4332,11 +4555,18 @@ void emulate(int argc, int *argv) {
     print((int*) "MB of memory");
     println();
 
-    copyBinaryToMemory();
+//printf("binaryLength: %d\n", binaryLength);
+//printf("preparing 3 processes...\n");
+    addprocess();
+    addprocess();
+    addprocess();
+
+    process_id=0;
 
     resetInterpreter();
-
-    *(registers+REG_SP) = memorySize - 4;
+//    *(registers+REG_SP) = memorySize - 4;
+    *(registers+REG_SP) = getsegmentlength(process_id) - 4;
+//printf("first stackpointer: %d\n", *(registers+REG_SP));
     *(registers+REG_GP) = binaryLength;
     *(registers+REG_K1) = *(registers+REG_GP);
 

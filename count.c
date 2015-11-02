@@ -6,6 +6,7 @@ int main() {
 	while (i<90) {
 		putchar(i);
 		i = i+1;
+		sched_yield();
 	}
 
 	exit(7);
