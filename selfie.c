@@ -3727,6 +3727,7 @@ int* segmentation_table;
 
 void printList(int *list);
 void printListPC(int *list);
+int* create_segment(int *start);
 
 void fct_syscall() {
     if (debug_disassemble) {
@@ -4414,36 +4415,23 @@ int test00() {
 // Address to the Register (new_reg), Address to the Memory (new_mem),
 // hi register for multiplication/division (new_reg_hi) and
 // lo register for multiplication/division (new_reg_lo) and
-int* create_process(int new_pid, int* new_reg, int* new_mem, int new_reg_hi, int new_reg_lo){
+int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo, int segment_number){
 	//initialization of the process
-	int* process;
-	//memory allocation
-	process = malloc (6 * 4);
-
-	//initalization of the argments of the process
-	*process = new_pid;
-	*(process+1) = 0;
-	*(process+2) = (int) new_reg;
-	*(process+3) = (int) new_mem;
-	*(process+4) = new_reg_hi;
-	*(process+5) = new_reg_lo;
-
-	return process;
-}
-
-int* create_process2(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo, int segment_number){
-	//initialization of the process
-	int* process;
+	int *process;
+	int *segment;
+	int *start;
 	int start_n_segment;
 	//memory allocation
 	process = malloc (7 * 4);
 	start_n_segment = segment_number * segment_size;
+	start = (int*) (*memory + start_n_segment);
+	segment = (int*) create_segment(start);
 
 	//initalization of the argments of the process
 	*process = new_pid;
 	*(process+1) = 0;
 	*(process+2) = (int) new_reg;
-	*(process+3) = *(memory) + start_n_segment;
+	*(process+3) = *segment;
 	*(process+4) = new_reg_hi;
 	*(process+5) = new_reg_lo;
 	*(process+6) = segment_number;
@@ -4453,15 +4441,15 @@ int* create_process2(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo, 
 
 // ------------------------ DATA STRUCTURE FOR A SEGMENT -----------------------
 // Creating a new Segment with Startaddress (start) and Size (size).
-int* create_segment(int* start, int size){
+int* create_segment(int *start){
 	//initialization of the process
-	int* segment;
+	int *segment;
 	//memory allocation
 	segment = malloc (2 * 4);
 
 	//initalization of the argments of the process
-	*segment =(int) start;
-	*(segment+1) = size;
+	*segment = (int) start;
+	*(segment+1) = segment_size;
 
 	return segment;
 }
@@ -4469,31 +4457,6 @@ int* create_segment(int* start, int size){
 // ------------------------ READY QUEUE ----------------------------------------
 // Creating a Ready queue with n processes and with m as number of instructions
 void create_ready_queue(int n, int m){
-
-	int *new_process;
-	int pid;
-	int *new_reg;
-	int *new_mem;
-
-	numb_of_instr = m;
-	pid = 0;
-	ready_queue = initializeList(ready_queue);
-
-	while(pid < n){
-		new_reg = malloc(4*32);
-		new_mem = malloc(4*MAX_MEM);
-		if(pid == 0){
-			running_process = create_process(pid, new_reg, new_mem, reg_hi, reg_lo);
-		}
-		else{
-			new_process = create_process(pid, new_reg, new_mem, reg_hi, reg_lo);
-			ready_queue = addToList(ready_queue, (int) new_process);
-		}
-		pid = pid + 1;
-	}
-}
-
-void create_ready_queue2(int n, int m){
 
 	int *new_process;
 	int pid;
@@ -4508,10 +4471,10 @@ void create_ready_queue2(int n, int m){
 	while(pid < n){
 		new_reg = malloc(4*32);
 		if(pid == 0){
-			running_process = create_process2(pid, new_reg, reg_hi, reg_lo, segment_number);
+			running_process = create_process(pid, new_reg, reg_hi, reg_lo, segment_number);
 		}
 		else{
-			new_process = create_process2(pid, new_reg, reg_hi, reg_lo, segment_number);
+			new_process = create_process(pid, new_reg, reg_hi, reg_lo, segment_number);
 			ready_queue = addToList(ready_queue, (int) new_process);
 		}
 		pid = pid + 1;
@@ -4599,80 +4562,7 @@ void create_segmentation_table(int segments){
 	memory = (int*)malloc(memory_size);
 }
 
-void runtest01() {
-    int* nextprocess;
-    int instr;
-    int *Buffer;
-
-    instr = 0;
-    Buffer = (int*)malloc(4*10);
-
-    while (1) {
-	fetch();
-        decode();
-        pre_debug();
-        execute();
-        post_debug();
-
-	instr = instr + 1;
-	*(running_process + 1) = *(running_process + 1) + 1;
-
-	if(instr == numb_of_instr){
-	 //round robin scheduling and switching the running process
-
-	 //Printing the Ready queue and the running process
-
-	 print((int*) "--------------------");
-	 println();
-	 print((int*) "--------------------");
-	 println();
-	 print((int*) "Ready-Queue after running Process");
-	 println();
-	 print((int*) "PIDs");
-	 println();
-	 printListPID(ready_queue);
-	 print((int*) "PCs");
-	 println();
-	 printListPC(ready_queue);
-	 print((int*) "Running Process");
-	 println();
-	 print((int*) "PID");
-	 println();
-	 print(itoa(*(running_process), Buffer, 10, 0));
-	 println();
-	 print((int*) "PC");
-	 println();
-	 print(itoa(*(running_process+1), Buffer, 10, 0));
-	 println();
-	 schedule_and_switch();
-	 print((int*) "--------------------");
-	 println();
-	 print((int*) "--------------------");
-	 println();
-	 print((int*) "Ready-Queue after switching Process");
-	 println();
-	 print((int*) "PIDs");
-	 println();
-	 printListPID(ready_queue);
-	 print((int*) "PCs");
-	 println();
-	 printListPC(ready_queue);
-	 print((int*) "Running Process");
-	 println();
-	 print((int*) "PID");
-	 println();
-	 print(itoa(*(running_process), Buffer, 10, 0));
-	 println();
-	 print((int*) "PC");
-	 println();
-	 print(itoa(*(running_process+1), Buffer, 10, 0));
-	 println();
-	 instr = 0;
-	}
-    }
-}
-
-void runtest02() {
+void runtest() {
     int* nextprocess;
     int instr;
     int *Buffer;
@@ -4795,57 +4685,9 @@ int main_emulator(int argc, int *argv) {
 
     	up_copyArguments(argc-3, argv+3);
 
-    	create_ready_queue(5,100);
-
-	Buffer = (int*)malloc(4*10);
-	print((int*) "--------------------");
-	println();
-	print((int*) "--------------------");
-	println();
-	//Printing the Ready Queue after the creation (PID's and PC's)
-	print((int*) "Ready Queue after Creation");
-	println();
-	print((int*) "PIDs");
-	println();
-	printListPID(ready_queue);
-	print((int*) "PCs");
-	println();
-	printListPC(ready_queue);
-
-	//Printing the PID and the PC of the running Process
-	print((int*) "Running Process");
-	println();
-	print((int*) "PID");
-	println();
-	print(itoa(*(running_process), Buffer, 10, 0));
-	println();
-	print((int*) "PID");
-	println();
-	print(itoa(*(running_process+1), Buffer, 10, 0));
-	println();
-
-	//Testversion of run of the Emulator
-	runtest01();
-
-    	exit(0);
-    }
-    if(testvar == 2){
-
-    	initInterpreter();
-
-    	parse_args(argc, argv);
-
-    	loadBinary();
-
-    	*(registers+REG_GP) = binaryLength;
-
-    	*(registers+REG_K1) = *(registers+REG_GP);
-
-    	up_copyArguments(argc-3, argv+3);
-
 	create_segmentation_table(number_of_processes);
 
-    	create_ready_queue2(number_of_processes,ticks);
+    create_ready_queue(number_of_processes,ticks);
 
 	Buffer = (int*)malloc(4*10);
 	print((int*) "--------------------");
@@ -4883,7 +4725,7 @@ int main_emulator(int argc, int *argv) {
 	println();
 
 	//Testversion of run of the Emulator
-	runtest02();
+	runtest();
 
     	exit(0);
     }
@@ -4908,32 +4750,29 @@ int main(int argc, int *argv) {
             if (getCharacter(firstParameter, 1) == 'c')
                 main_compiler();
             else if (getCharacter(firstParameter, 1) == 'm') {
-                if (argc > 3){
-		    testvar = 0;
+                if (argc > 3) {
+		            testvar = 0;
                     main_emulator(argc, (int*) argv);
-		}
+		        }
                 else {
                     exit(-1);
-		}
+		        }
             }
-	    else if (getCharacter(firstParameter, 1) == '0') {
-		    test00();
-	    }
-	    else if (getCharacter(firstParameter, 1) == '1') {
-		    testvar = 1;
-		    main_emulator(argc, (int*) argv);
-	    }
-	    else if (getCharacter(firstParameter, 1) == '2') {
-		    testvar = 2;
-		    main_emulator(argc, (int*) argv);
-	    }
+            else if (getCharacter(firstParameter, 1) == '0') {
+                test00();
+            }
+            else if (getCharacter(firstParameter, 1) == 't') {
+                testvar = 1;
+                main_emulator(argc, (int*) argv);
+            }
             else {
                 exit(-1);
             }
         } else {
             exit(-1);
         }
-    } else
+    } else {
         // default: compiler
         main_compiler();
+    }
 }
