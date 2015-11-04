@@ -70,3 +70,17 @@ At the end of this assignment you will have the operating system running on top 
 * provide a special system call, e.g., switch(int previous_process, int next_process) in the emulator that is invoked by the operating system only and modifies the machine state. One issue remains: after the OS invokes _switch_, the OS process must be reset to interrupt-trap handling mode. You can rely on the following convention: mipster starts executing a binay at address 0x0, the main method of selfie.c. Resetting the PC of the OS process to 0x0 after _switch_ will reset the OS but not its heap and globals. The OS stack must be reset as well. Important: _selfie -k_ must start with interrupt/trap handling. If no interrupt or trap is to be handled, the OS switches to the first ready process. If not ready process exists, the OS loads _some_program.mips_ or terminates.
 
 * Deadline: Nov 5, end of day
+
+
+Assignment 4: Mutual Exclusion
+------------------------------
+
+* implement a single global lock through mipster syscalls, e.g., a lock() and unlock() call.
+* implement a simple user program that demonstrates mutual exclusion, e.g, show that one process inside the critical section makes progress, processes not taking the lock make progress, and processes waiting for the lock do not make progress. Hint: you can implement the [getpid](http://linux.die.net/man/2/getpid) system call to identify processes.
+* experiment with and demonstrate different interleavings: using locks, no locks, different time slices
+* Deadline: Nov 12, end of day
+
+* Bonus: implement basic multi-threading support
+ * Idea: threads share one address space, processes don't
+ * when duplicating processes, create threads instead, i.e., shared code, heap, globals, but private call stacks, private PC, private registers
+
