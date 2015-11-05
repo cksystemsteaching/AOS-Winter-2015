@@ -5046,9 +5046,8 @@ void list_test() {
     printInt(id);
     println();
     print_process_list(list);
-    
-    sched_yield();
-    print((int*) "x");
+
+    //sched_yield();
 
     list = list_init();
     
@@ -5057,14 +5056,6 @@ void list_test() {
     list_push_front(list, process);
     print_process_list(list);
     
-    i = 0;
-    while(i < 10) {
-        sched_yield();
-        print((int*) "x");
-        println();
-        i = i + 1;
-    }
-
     print((int*) "pop back ");
     data = list_entry_get_data(list_pop_back(list));
     id = process_get_id(data);
@@ -5159,10 +5150,6 @@ void list_test() {
     println();
     print_process_list(list);
 
-    sched_yield();
-    print((int*) "x");
-    println();
-
     print((int*) "pop front ");
     data = list_entry_get_data(list_pop_front(list));
     id = process_get_id(data);
@@ -5190,8 +5177,6 @@ void list_test() {
     printInt(id);
     println();
     print_process_list(list);
-
-    sched_yield();
 }
 
 // -----------------------------------------------------------------
