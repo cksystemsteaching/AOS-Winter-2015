@@ -6,10 +6,13 @@ PROGRAMS=selfie
 default: compile run 
 
 compile: 
-	-rm -r $ list.mips 
+	-rm -r $ test.mips 
 	-touch out
-	./selfie < list.c
-	-mv out list.mips
+	./selfie -c < test.c
+	-mv out test.mips
+	-touch out
+	./selfie -c < selfie.c
+	-mv out selfie.mips
 
 run: 
-	./selfie -m 32 list.mips
+	./selfie -m 32 test.mips

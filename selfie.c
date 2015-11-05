@@ -657,8 +657,11 @@ void syscall_getchar();
 
 void emitPutchar();
 
-void emitYield();
-void syscall_yield();
+void emitYield();       //ADDED A2
+void syscall_yield();   //ADDED A2
+
+void emitSwitch();      //ADDED A3
+void syscall_switch();  //ADDED A3
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
@@ -668,7 +671,8 @@ int SYSCALL_WRITE   = 4004;
 int SYSCALL_OPEN    = 4005;
 int SYSCALL_MALLOC  = 5001;
 int SYSCALL_GETCHAR = 5002;
-int SYSCALL_YIELD   = 5003;
+int SYSCALL_YIELD   = 5003; //ADDED A2
+int SYSCALL_SWITCH  = 5004; //ADDED A3
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -760,7 +764,7 @@ int reg_lo = 0; // lo register for multiplication/division
 
 // -----------------ADDITIONAL METHODS ASSIGNMENT 1 ----------------
 
-void push(int *mem, int *reg, int *reg_hi, int *reg_lo, int pc,int pId,int *segment, int *head);
+void push(int *mem, int *reg, int reg_hi, int reg_lo, int pc,int pId,int *segment,int gp, int sp, int k1, int *head);
 
 void setPrcosessNext(int *process, int *next);
 void setProcessPc(int * process, int pc);
@@ -770,6 +774,10 @@ void setProcessRegHi(int *process, int reg_hi);
 void setProcessRegLo(int *process, int reg_lo);
 void setProcessId (int *process, int pId);
 void setProcessSegPointer(int *process, int *segment);
+void setProcessGlobalP(int *process, int gp);
+void setProcessStackP(int *process, int sp);
+void setProcessK1(int *process,int kp);
+
 
 int* getProcessNext(int *process);
 int getProcessPc(int *process);
@@ -779,6 +787,9 @@ int getProcessRegHi(int *process);
 int getProcessRegLo(int *process);
 int getProcessId(int *process);
 int* getProcessSegPointer(int *process);
+int getProcessGlobalP(int *process);
+int getProcessStackP(int *process);
+int getProcessK1(int *process);
 
 
 void createProcessList(int numberoOfProcesses);
@@ -810,11 +821,32 @@ int numberofInstructions = 0;
 int *process = 0;
 int *segmentTable = 0;
 int segPointer = 0;
-int segSize = 2 * 1024 * 1024;
+int segSize = 2097152;
 int segmentStart = 0;   //this variable is initalized when scheduler is called
                         // so that it doesn't have to be computed every time
                         // tlb is called
 
+// ----------------- ASSIGNMENT 3 --------------------------------
+int main_os();
+int interruptOccured = 0;
+int processTable = 0;
+void insertInProcessTable(int *process, int gp, int sp,int*head);
+
+
+void setProcessTableNext(int *processEntry, int *next);
+void setProcessTableProcess(int *processEntry, int *process);
+void setProcessTableGp(int *processEntry, int gp);
+void setProcessTableSp(int *processEntry, int sp);
+int *getProcessTableNext(int *processEntry);
+int *getProcessTableProcess(int *processEntry);
+int getProcessTableGp(int *processEntry);
+int getProcessTableSp(int *processEntry);
+
+
+void saveKernelState(int pc, int *reg, int reg_hi, int reg_lo, int segstart,int gp,int sp,int k1);
+void restoreKernelState();
+int tlb_debug = 0;
+void loadProcess(int * name, int id);
 // ------------------------- INITIALIZATION ------------------------
 
 void initInterpreter() {
@@ -828,6 +860,7 @@ void initInterpreter() {
     *(EXCEPTIONS + EXCEPTION_UNKNOWNFUNCTION)    = (int) "unknown function";
 
     registers = malloc(32*4);
+    
 }
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -3091,6 +3124,7 @@ int main_compiler() {
     emitGetchar();
     emitPutchar();
     emitYield();
+    emitSwitch();
 
     // parser
     gr_cstar();
@@ -3289,11 +3323,28 @@ int tlb(int vaddr) {
     if (vaddr % 4 != 0)
         exception_handler(EXCEPTION_ADDRESSERROR);
 
-    if(process !=0){
-        vaddr = vaddr + segmentStart;
+    if(tlb_debug == 1){
+        if(process !=0){
+            print(itoa(vaddr/4, string_buffer, 10, 0));
 
+            print((int*)" -->  ");
+
+            vaddr = vaddr + segmentStart;
+            print(itoa(vaddr/4, string_buffer, 10, 0));
+            println();
+        }
+    
+        else{
+            print(itoa(vaddr/4, string_buffer, 10, 0));
+            println();
+        }
     }
-   
+    else{
+        if(process !=0){
+            vaddr = vaddr + segmentStart;
+        }
+    }
+
     // physical memory is word-addressed for lack of byte-sized data type
     return vaddr / 4;
 }
@@ -3732,6 +3783,59 @@ void emitPutchar() {
     emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
+//-----------------------------------------------------------------------------------------
+//---------------------------ASSIGNEMENT 3, CONTAINS BUGS ---------------------------------
+//-----------------------------------------------------------------------------------------
+
+
+void emitSwitch(){
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "switch", binaryLength, FUNCTION, INT_T, 0);
+    
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    
+    //emitIFormat(OP_LW, REG_SP, REG_A0, 0); // exit code
+    //emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+    
+    //emitIFormat(OP_LW, REG_SP, REG_T1, 0);
+    //emitIFormat(OP_LW, REG_SP, REG_T2, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SWITCH);
+    emitRFormat(0, 0, 0, 0, FCT_SYSCALL);
+    
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+
+    
+}
+
+void syscall_switch(){
+    
+    print("switching");
+    println();
+    
+    saveKernelState(pc,registers,reg_hi,reg_lo,segmentStart,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1));
+    if(*(memory+segSize+12) == 0)
+        registers = malloc(32);
+    else
+        registers           =   *(memory+segSize+12);
+
+    
+    pc                  =   *(memory+segSize+11);
+    reg_hi              =   *(memory+segSize+13);
+    reg_lo              =   *(memory+segSize+14);
+    segmentStart        =   *(memory+segSize+15);
+    process             =   *(memory+segSize+16);
+    *(registers+REG_GP) =   *(memory+segSize+17);
+    *(registers+REG_SP) =   *(memory+segSize+18);
+    *(registers+REG_K1) =   *(memory+segSize+19);
+
+    *(memory+segSize+10) = 0; //exit
+
+    
+}
+
+
 void emitYield(){
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "yield", binaryLength, FUNCTION, INT_T, 0);
     
@@ -3746,13 +3850,169 @@ void emitYield(){
     emitRFormat(0, 0, 0, 0, FCT_SYSCALL);
     
     emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
-
+    
     
 }
 
 void syscall_yield(){
-    scheduler();
+ 
+    
+    *(memory+segSize+11) = pc;
+    *(memory+segSize+12) = registers;
+    *(memory+segSize+13) = reg_hi;
+    *(memory+segSize+14) = reg_lo;
+    *(memory+segSize+15) = segmentStart;
+    *(memory+segSize+16) = process;
+    *(memory+segSize+17) = *(registers+REG_GP);
+    *(memory+segSize+18) = *(registers+REG_SP);
+    *(memory+segSize+19) = *(registers+REG_K1);
+
+    
+    restoreKernelState();
+
 }
+
+//------------------------------------------------------------------------
+//              MEMORY LAYOUT
+//       ----------------------------------------------------------------
+//      |       ||  |   |    ||           ||           ||               ||
+//      |  OS   ||KP| NP|    ||    P1     ||     P2    ||    P3 ... PN  ||
+//       ----------------------------------------------------------------
+//      0      2MB           4MB          6MB         8MB               32MB
+//
+//  OS - KERNEL
+//  KP - KERNEL PROCESS
+//  NP - NEXT PROCESS
+//
+// -----------------------------------------------------------------------
+
+
+
+// Kernel Process Data Structure :
+// +----+------------+
+// |  0 | pc         |
+// |  1 | reg        |
+// |  2 | reg_hi     |
+// |  3 | reg_lo     |
+// |  4 | segStart   |
+// |  5 | global p   |
+// |  6 | stack p    |
+// +----+------------+
+
+
+void saveKernelState(int pc, int *reg, int reg_hi, int reg_lo, int segStart,int gp,int sp, int k1){
+    int pa;
+    pa = 0;
+    *(memory+segSize) = pc;
+    *(memory + segSize+1) = reg;
+    *(memory + segSize+2) = reg_hi;
+    *(memory + segSize+3) = reg_lo;
+    *(memory + segSize+4) = segStart;
+    *(memory + segSize+5) = gp;
+    *(memory + segSize+6) = sp;
+    *(memory + segSize+7) = k1;
+    
+}
+
+void restoreKernelState(){
+    int pa;
+    pa = 0;
+    
+    pc                  = *(memory + segSize);
+    registers           = *(memory + segSize + 1);
+    reg_hi              = *(memory + segSize + 2);
+    reg_lo              = *(memory + segSize + 3);
+    segmentStart        = 0;
+    *(registers+REG_GP) = *(memory + segSize + 5);
+    *(registers+REG_SP) = *(memory + segSize + 6);
+    *(registers+REG_K1) = *(memory + segSize + 7);
+    process =0;
+    pc = pc+4;
+}
+
+
+
+
+
+// *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
+// -----------------------------------------------------------------
+// ---------------------     KOS   ---------------------------------
+// -----------------------------------------------------------------
+// *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
+
+int main_os(){
+    int *program;
+    int *segment;
+    int i;
+    int *j;
+    int *secondSegmentStart;
+    secondSegmentStart = secondSegmentStart+  2097152;
+    
+    
+    segSize = 2097152;
+    segmentStart = 2097152*2;
+    segPointer =2097152*2;
+    memory = 0;
+    j = 2097152;
+    initInterpreter();
+
+    readyqueue = 0;
+
+    loadProcess("test.mips",2);
+    segmentStart = segmentStart + segSize;
+
+    
+    while(1){
+        print("ENTERING KERNEL ");
+        println();
+
+        process = pop(readyqueue);
+        segment = getProcessSegPointer(process);
+
+        println();
+       
+        *(secondSegmentStart+11) = getProcessPc(process);
+        *(secondSegmentStart+12) = getProcessRegisters(process);
+        *(secondSegmentStart+13) = getProcessRegHi(process);
+        *(secondSegmentStart+14) = getProcessRegLo(process);
+        *(secondSegmentStart+15) = getSegmentStart(segment);
+        *(secondSegmentStart+16) = getProcessId(process);
+        *(secondSegmentStart+17) = getProcessGlobalP(process);
+        *(secondSegmentStart+18) = getProcessStackP(process);
+        *(secondSegmentStart+19) = getProcessK1(process);
+
+   
+        
+        *(secondSegmentStart+10) = 1; //switch
+        
+        push(memory,*(secondSegmentStart+12),*(secondSegmentStart+13),*(secondSegmentStart+14),*(secondSegmentStart+11),getProcessId(process),segment,*(secondSegmentStart+17),*(secondSegmentStart+18),*(secondSegmentStart+19),readyqueue);
+    }
+    
+    
+    exit(0);
+}
+
+void loadProcess(int * name, int id){
+    int *segment;
+
+    binaryName = name;
+    binaryLength = 0;
+    process =5;
+    loadBinary();
+    
+    *(registers+REG_GP) = binaryLength;
+    
+    *(registers+REG_K1) = *(registers+REG_GP);
+    
+    //initialize SP for the second segment!
+    *(registers+REG_SP) = segSize-4;
+    
+    segment = insertSegment(id,segPointer,segSize,segmentTable);
+    segPointer = segPointer + segSize; //increment segmentPointer
+    push(memory,0,reg_hi,reg_lo,pc,id,segment,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1),readyqueue);
+
+}
+
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -3784,6 +4044,8 @@ void fct_syscall() {
         syscall_getchar();
     } else if (*(registers+REG_V0) == SYSCALL_YIELD) {
         syscall_yield();
+    } else if (*(registers+REG_V0) == SYSCALL_SWITCH) {
+        syscall_switch();
     }else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
     }
@@ -4184,23 +4446,19 @@ void execute() {
 }
 
 //A1 NEW RUN METHOD TO SUPPORT PROCESS SWITCH
-void run() {
-    process = pop(readyqueue);
+void run(){
+
     while (1) {
         fetch();
         decode();
         pre_debug();
         execute();
         post_debug();
-        
-        numberofInstructions = numberofInstructions + 1;
-        if(numberofInstructions > 10){
-            //scheduler();
+        if(*(memory+segSize+10) == 1){
+            syscall_switch();
         }
-        
     }
-    
-    
+
 }
 
 void parse_args(int argc, int *argv) {
@@ -4210,7 +4468,7 @@ void parse_args(int argc, int *argv) {
     initMemory(atoi((int*) *(argv+2)) * 1024 * 1024, (int*) *(argv+3));
 
     // initialize stack pointer
-    //*(registers+REG_SP) = memorySize - 4;
+    *(registers+REG_SP) = memorySize - 4;
     
     memSize = atoi((int*) *(argv+2)) * 1024 * 1024;  //ADDED A1
 
@@ -4225,6 +4483,9 @@ void parse_args(int argc, int *argv) {
 void up_push(int value) {
     int vaddr;
 
+    print("stack");
+    println();
+    
     // allocate space for one value on the stack
     *(registers+REG_SP) = *(registers+REG_SP) - 4;
 
@@ -4232,6 +4493,7 @@ void up_push(int value) {
     vaddr = *(registers+REG_SP);
 
     // store value
+
     storeMemory(vaddr, value);
 }
 
@@ -4264,32 +4526,78 @@ void up_copyArguments(int argc, int *argv) {
     }
 }
 
+void insertInProcessTable(int *process, int gp, int sp, int *head){
+    int *adr;
+    
+    adr = malloc(4*4);
+    
+    
+    setProcessTableNext(adr,head);
+    setProcessTableProcess(adr,process);
+    setProcessTableGp(adr,gp);
+    setProcessTableSp(adr,sp);
+
+    processTable = adr;
+
+}
+
+void setProcessTableNext(int *processEntry, int *next){
+    *processEntry = (int)(next);
+}
+
+void setProcessTableProcess(int *processEntry, int *process){
+    *(processEntry+1) = process;
+}
+
+void setProcessTableGp(int *processEntry, int gp){
+    *(processEntry+2) = gp;
+}
+
+void setProcessTableSp(int *processEntry, int sp){
+    *(processEntry+3) = sp;
+}
+
+int* getProcessTableNext(int *processEntry){
+    return (int*) *processEntry;
+}
+
+int *getProcessTableProcess(int *processEntry){
+    return (int*) *(processEntry+1);
+}
+
+int getProcessTableGp(int *processEntry){
+    return *(processEntry+2);
+}
+
+int getProcessTableSp(int *processEntry){
+    return *(processEntry+3);
+}
+
+
+
 int main_emulator(int argc, int *argv) {
+    
+    int*segment;
+    
     initInterpreter();
-
-    parse_args(argc, argv);
-
+    
+    initMemory(32 * 1024 * 1024,"selfie.mips");
+    binaryLength = 0;
     loadBinary();
-
+    
     *(registers+REG_GP) = binaryLength;
-
+    
     *(registers+REG_K1) = *(registers+REG_GP);
     
     //initialize SP for the firs segment!
-
     *(registers+REG_SP) = segSize - 4;
 
-    up_copyArguments(argc-3, argv+3);
-    
-    createProcessList(3); //ADDED CREATES LIST WITH 3 PROCESSES
-
-
     run();
-
     exit(0);
+
 }
 // ----------------------------------------------------------------
-// ---------------------ASSIGNMENT 1 ------------------------------
+// ---------------------ASSIGNMENT 1,2 ------------------------------
 // ----------------------------------------------------------------
 
 
@@ -4298,6 +4606,14 @@ void memCopy(int *oldMemory, int *newMemory, int length) {
     
     i = 0;
     
+    //print((int*)"memCopy");
+    //println();
+    //print(itoa((oldMemory), string_buffer, 10, 0));
+    //println();
+    //print(itoa((newMemory), string_buffer, 10, 0));
+    //println();
+
+    
     while (i < length) {
         *(newMemory+i) = *(oldMemory+i);
         i = i + 1;
@@ -4305,9 +4621,10 @@ void memCopy(int *oldMemory, int *newMemory, int length) {
 }
 
 void createProcessList (int numberoOfProcesses){
-    int i = 0;
-    int pId = 0;
-    
+    int i;
+    int pId;
+    i = 0;
+    pId = 2;
     while(i<numberoOfProcesses){
         createProcess(readyqueue, pId);
         i = i+1;
@@ -4328,13 +4645,15 @@ void createProcess(int *head, int pId){
     if((int)(head) == 0 ){
         segment = insertSegment(pId,segPointer,segSize,segmentTable);
         segPointer = segPointer + segSize; //increment segmentPointer
-        push(memory,registers,reg_hi,reg_lo,pc,pId,segment,readyqueue);
+        push(memory,registers,reg_hi,reg_lo,pc,pId,segment,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1),readyqueue);
     }
     else{
         segment = insertSegment(pId,segPointer,segSize,segmentTable);
+        segPointer = segPointer + segSize; //increment segmentPointer
+
 
         newRegisters = (int*)malloc(32*4);
-        memCopy(memory,memory+getSegmentStart(segment)/4,segSize/4);
+        memCopy(memory+(segSize*2)/4,memory+getSegmentStart(segment)/4,segSize/4);
         memCopy(registers,newRegisters,32);
         
     
@@ -4342,11 +4661,12 @@ void createProcess(int *head, int pId){
         newRegHi = reg_hi;
         newRegLo = reg_lo;
         
-        push(memory,newRegisters,newRegHi,newRegLo,newPC,pId,segment,readyqueue);
+        push(memory,newRegisters,newRegHi,newRegLo,newPC,pId,segment,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1),readyqueue);
+        
     }
 }
 
-void push(int *memory, int *registers, int *reg_hi, int *reg_lo, int pc, int pId, int *segment, int *head){
+void push(int *memory, int *registers, int reg_hi, int reg_lo, int pc, int pId, int *segment, int gp, int sp, int k1, int *head){
     
     int  *adr;
     
@@ -4360,9 +4680,12 @@ void push(int *memory, int *registers, int *reg_hi, int *reg_lo, int pc, int pId
     // |  5 | reg_lo     |
     // |  6 | processID  |
     // |  7 | segPointer |
+    // |  8 | global p   |
+    // |  9 | stack p    |
+    // | 10 | k1         |
     // +----+------------+
     
-    adr = (int*)malloc (8*4);
+    adr = (int*)malloc (11*4);
     
     setPrcosessNext(adr,head);
     setProcessPc(adr,pc);
@@ -4372,6 +4695,9 @@ void push(int *memory, int *registers, int *reg_hi, int *reg_lo, int pc, int pId
     setProcessRegLo(adr,reg_lo);
     setProcessId(adr,pId);
     setProcessSegPointer(adr,segment);
+    setProcessGlobalP(adr,gp);
+    setProcessStackP(adr,sp);
+    setProcessK1(adr,k1);
     
     readyqueue = adr;
     
@@ -4403,6 +4729,7 @@ int * pop(int *head){
         
         head = temp;
     }
+  
 }
 
 void setPrcosessNext(int *process, int *next){
@@ -4437,6 +4764,16 @@ void setProcessSegPointer(int *process, int *segment){
     *(process+7) = segment;
 }
 
+void setProcessGlobalP(int *process, int gp){
+    *(process+8) = gp;
+}
+
+void setProcessStackP(int *process, int sp){
+    *(process+9) = sp;
+}
+void setProcessK1(int *process, int k1){
+    *(process+10) = k1;
+}
 
 int* getProcessNext(int *process){
     return (int*) *process;
@@ -4467,9 +4804,17 @@ int getProcessId(int *process){
 
 int* getProcessSegPointer(int *process){
     return (int*) *(process+7);
-
 }
 
+int getProcessGlobalP(int *process){
+    return *(process+8);
+}
+int getProcessStackP(int *process){
+    return *(process+9);
+}
+int getProcessK1(int *process){
+    return *(process+10);
+}
 
 int * insertSegment (int pId, int start, int size, int *head){
     int  *adr;
@@ -4528,14 +4873,18 @@ int getSegmentSize(int *segment){
 }
 
 void scheduler(){
-    int pId = getProcessId(process);
-    int *segment = getProcessSegPointer(process);
+    int pId;
+    int *segment;
+    pId= getProcessId(process);
+    segment = getProcessSegPointer(process);
     
     //save the process state
-    push(memory,registers,reg_hi,reg_lo,pc,pId,segment,readyqueue);
+    push(memory,registers,reg_hi,reg_lo,pc,pId,segment,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1),readyqueue);
     
     //get the next process
     process = pop(readyqueue);
+    
+    
     
     //memory = getProcessMemory(process);
     registers = getProcessRegisters(process);
@@ -4543,9 +4892,6 @@ void scheduler(){
     reg_hi = getProcessRegHi(process);
     reg_lo = getProcessRegLo(process);
     
-    numberofInstructions = 0;
-    segment = getProcessSegPointer(process);
-    segmentStart = getSegmentStart(segment);
 }
 
 
@@ -4574,13 +4920,19 @@ int main(int argc, int *argv) {
                 else
                     exit(-1);
             }
+            else if(getCharacter(firstParameter, 1) == 'k'){
+                if (argc > 3)
+                    main_os();
+                else
+                    exit(-1);
+            }
             else {
                 exit(-1);
             }
         } else {
             exit(-1);
         }
-    } else
-        // default: compiler
-        main_compiler();
+    } else{
+        main_os();
+    }
 }
