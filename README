@@ -1,0 +1,79 @@
+#########################################
+## Assignment 0: Basic data structures ##
+#########################################
+https://github.com/cksystemsteaching/AOS-Winter-2015
+Author: armin langhofer <uni@langhofer.at>
+
+This is my implementation of a linked list in C*.
+
+To Compile, please follow these steps:
+======================================
+1. install ubuntu 32bit lts server edition, apt-get install gcc.
+2. see https://github.com/mistay/AOS-Winter-2015/tree/selfie-master for how to get selfie up and running
+3. git clone repro from https://github.com/mistay/AOS-Winter-2015.git or, if pull request was accepted from
+   https://github.com/cksystemsteaching/AOS-Winter-2015.git
+4. change into cloned directory and do the following:
+
+$ gcc -o selife selfie.c -fno-builtin
+$ touch out
+$ ./selfie -c < selfie.c
+$ mv out selfie.mips1
+$ touch out
+$ ./selfie -m 32  selfie.mips1 < linkedlist.c 
+mem 32MB
+[OS] Terminated with 0
+
+
+To Run:
+=======
+$ ./selfie -m 32 out 
+mem 32MB
+d,c,b,a
+d,b,a
+done[OS] Terminated with 6
+$
+
+Interpretation and Explanation of what happened
+===============================================
+First, linkedlist.c creates some arbitrary elements:
+
+	...
+        head = create(0, 'a');
+        head = create(head, 'b');
+        toberemoved = create(head, 'c');
+	...
+
+Then, the resulted list is printed to stdout:
+
+	d,c,b,a
+
+Now, one element is removed:
+
+	...
+	remove(head, toberemoved);
+	...
+
+The resulting list is printed again:
+	d,b,a
+	
+
+Some fixed chars are printed (this is an easter-egg styled 'hello world'):
+	done
+
+And the application exits with exit code 6: just to clarify this application exits (and not the emulator).
+	Terminated with 6
+
+
+Result
+======
+[OK] must be implemented in C*
+[OK] must compile with selfie
+[OK] must run on selfie
+[OK  alloc()  ] the list must be dynamically allocated
+[OK, alloc()  ] every node must be dynamically allocated
+[OK, create() ] inserting nodes to the list and removing nodes from the list
+[OK, printll()] list iteration
+[NG] Bonus: sort the list. Any way you like
+[OK, Oct 14] Deadline: Oct 15, end of day
+
+
