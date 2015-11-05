@@ -4122,8 +4122,7 @@ void syscall_sched_setparam() {
     reg_hi = process_get_reg_hi(process);
     reg_lo = process_get_reg_lo(process);
 
-
-    //g_segment_offset = 0;
+    g_segment_offset = 0;
 }
 
 void emitSelect() {
@@ -5541,6 +5540,8 @@ void list_test() {
     println();
     print_process_list(list);
     
+    sched_yield();
+
     list = list_init();
     
     print((int*) "push front 1");
