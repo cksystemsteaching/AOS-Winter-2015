@@ -5763,8 +5763,8 @@ int main(int argc, int *argv) {
     
     initInterpreter();
 
-    print((int*)"this is a test");
-    println();
+    //print((int*)"this is a test");
+    //println();
     list_test();
 
     // selfieName = (int*) *argv;
