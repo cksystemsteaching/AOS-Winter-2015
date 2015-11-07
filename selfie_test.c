@@ -31,9 +31,9 @@
 // into the emulator. Selfie is meant to be extended in numerous ways.
 //
 // C* is a tiny Turing-complete subset of C that includes dereferencing
-// (the * operator) but excludes data structures, Boolean expressions, and
-// many other features. There are only signed 32-bit integers and pointers,
-// and character constants for constructing word-aligned strings manually.
+// (the * operator) but excludes data structures, bitwise and Boolean
+// operators, and many other features. There are only signed 32-bit
+// integers and pointers as well as character and string constants.
 // This choice turns out to be helpful for students to understand the
 // true role of composite data structures such as arrays and records.
 // Bitwise operations are implemented in libcstar using signed integer
@@ -297,14 +297,20 @@ void resetScanner() {
 }
 
 // -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT2 --------------------------
+// -----------------------------------------------------------------
+
+void init_segmentation();
+void process_get_segment(int *process, int segment_size, int argc, int *argv);
+
+// -----------------------------------------------------------------
 // -------------------------- ASSIGNMENT1 --------------------------
 // -----------------------------------------------------------------
 
 // NUM ... Number of bytes, returns destination
 int  *memcpy(int *source, int num);
 void printInt(int i);
-int int_length(int i);
-void init_readyqueue();
+void init_readyqueue(int argc, int *argv);
 int  *process_schedule();
 void process_switch(int *process);
 
@@ -313,6 +319,31 @@ void process_switch(int *process);
 // -----------------------------------------------------------------
 
 int DEBUG_1; // Debug first assignment
+
+// -----------------------------------------------------------------
+// ----------------------------- STRUCT ----------------------------
+// -----------------------------------------------------------------
+
+int  *struct_init(int size);
+
+int  *struct_get_element_at(int *array, int i);
+void struct_set_element_at(int *array, int i, int *value);
+
+void struct_test();
+
+// -----------------------------------------------------------------
+// ----------------------------- SEGMENT ---------------------------
+// -----------------------------------------------------------------
+
+int  *segment_init(int start, int size);
+
+// Getters
+int  segment_get_start(int *segment);
+int  segment_get_size(int *segment);
+
+// Setters
+void segment_set_start(int *segment, int start);
+void segment_set_size(int *segment, int size);
 
 // -----------------------------------------------------------------
 // ------------------------------ LIST -----------------------------
@@ -358,6 +389,7 @@ void list_test();
 // ---------------------------- PROCESS ----------------------------
 // -----------------------------------------------------------------
 
+int  *process_allocate();
 int  *process_init(int id, int *registers, int *memory, int reg_hi, int reg_lo);
 
 int  process_get_id(int *process);
@@ -366,6 +398,7 @@ int  *process_get_registers(int *process);
 int  *process_get_memory(int *process);
 int  process_get_reg_hi(int *process);
 int  process_get_reg_lo(int *process);
+int  process_get_segment_id(int *process);
 
 
 void process_set_id(int *process, int id);
@@ -374,16 +407,27 @@ void process_set_registers(int *process, int *registers);
 void process_set_memory(int *process, int *memory);
 void process_set_reg_hi(int *process, int reg_hi);
 void process_set_reg_lo(int *process, int reg_lo);
+void process_set_segment_id(int *process, int segment_id);
 
 void print_process_list(int *list);
 
 
 // ------------------------ GLOBAL VARIABLES -----------------------
 
+// A1
 int  *g_readyqueue;
 int  *g_running_process;
 int  g_ticks;
+// A2
+int  *g_segment_table;
+int  g_segment_counter;
+int  g_segment_offset;
+int  g_segmentation_active;
+// A3
+int  *g_process_table;
+int  g_next_segment;
 
+// A1
 int  NUMBER_OF_INSTANCES;
 int  TIME_SLICE;
 int  MEMORY_SIZE;
@@ -752,6 +796,23 @@ void syscall_malloc();
 
 void emitPutchar();
 
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT2 --------------------------
+// -----------------------------------------------------------------
+
+void emitSchedYield();
+void syscall_sched_yield();
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT3 --------------------------
+// -----------------------------------------------------------------
+
+void emitSchedSetParam();
+void syscall_sched_setparam();
+
+void emitSelect();
+void syscall_select();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int SYSCALL_EXIT    = 4001;
@@ -760,6 +821,10 @@ int SYSCALL_WRITE   = 4004;
 int SYSCALL_OPEN    = 4005;
 int SYSCALL_MALLOC  = 5001;
 int SYSCALL_GETCHAR = 5002;
+// A2
+int SYSCALL_SCHED_YIELD = 5003;
+int SYSCALL_SCHED_SETPARAM = 5004;
+int SYSCALL_SELECT = 5005;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -3244,6 +3309,11 @@ void compile() {
     emitOpen();
     emitMalloc();
     emitPutchar();
+    // A2
+    emitSchedYield();
+    // A3
+    emitSchedSetParam();
+    emitSelect();
 
     // parser
     gr_cstar();
@@ -3877,6 +3947,252 @@ void emitPutchar() {
     emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT2 --------------------------
+// -----------------------------------------------------------------
+
+void emitSchedYield() {
+    // Create the symbol table entry fpr sched_yield
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "sched_yield", binaryLength, FUNCTION, INT_T, 0);
+
+    // sched_yield doesn't have any arguments
+    // emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    // emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    // emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+
+    // emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SCHED_YIELD);
+    // emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    emitIFormat(OP_LW, REG_SP, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+
+    emitIFormat(OP_LW, REG_SP, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+
+    emitIFormat(OP_LW, REG_SP, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+
+    emitIFormat(OP_LW, REG_SP, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SCHED_YIELD);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+void syscall_sched_yield() {
+    //int *process;
+    int vaddr;
+    int *filename;
+    int arg2;
+    int arg3;
+    int arg4;
+
+    // We need to increase the pc before the actual switch
+    pc = pc + 4;
+    //process = process_schedule();
+    //process_switch(process);
+    // Reset ticks
+    // TODO: Next process gets one tick too few
+    //g_ticks = 0;
+
+    // vaddr = *(registers+REG_A0);
+    // filename = memory + tlb(vaddr);
+    // print((int*)filename);
+    // println();
+
+    // arg2 = *(registers + REG_A1);
+    // printInt(arg2);
+    // println();
+
+    // arg3 = *(registers + REG_A2);
+    // printInt(arg3);
+    // println();
+
+    // arg4 = *(registers + REG_A3);
+    // printInt(arg4);
+    // println();
+
+    //if (DEBUG_1) {
+        print((int*)"call sched_yield");
+        println();
+    //}
+}
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT3 --------------------------
+// -----------------------------------------------------------------
+
+// PID 
+void emitSchedSetParam() {
+    // Create the symbol table entry fpr sched_yield
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "sched_setparam", binaryLength, FUNCTION, INT_T, 0);
+
+    emitIFormat(OP_LW, REG_SP, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // File name
+
+    emitIFormat(OP_LW, REG_SP, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // Segment Size
+
+    emitIFormat(OP_LW, REG_SP, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // Process ID
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SCHED_SETPARAM);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+void syscall_sched_setparam() {
+    int pid;
+    int segment_size;
+    int vaddr;
+
+    int *process;
+    int *new_registers;
+
+    print((int*)"--------------------------");
+    println();
+    print((int*)"System Call sched_setparam");
+    println();
+
+    pid = *(registers + REG_A0);
+    segment_size = *(registers + REG_A1);
+    vaddr = *(registers + REG_A2);
+    binaryName = memory + tlb(vaddr);
+
+    print((int*)"PID: ");
+    printInt(pid);
+    println();
+
+    print((int*)"Segment Size: ");
+    printInt(segment_size);
+    println();
+
+    print((int*)"Filename: ");
+    print((int*)binaryName);
+    println();
+
+    load(); // Load the new file
+    g_segment_offset = 2 * 1024 * 1024;
+    copyBinaryToMemory();
+
+    resetInterpreter();
+
+    new_registers = memcpy(registers, 32); // 32 registers
+
+    *(new_registers + REG_SP) = segment_size + g_segment_offset;
+    *(new_registers + REG_GP) = binaryLength + g_segment_offset;
+    *(new_registers + REG_K1) = *(new_registers + REG_GP);
+
+    print((int*)"Stack pointer: ");
+    printInt(*(new_registers+REG_SP));
+    println();
+
+    print((int*)"Global pointer: ");
+    printInt(*(new_registers+REG_GP));
+    println();
+
+    print((int*)"Binary Length: ");
+    printInt(binaryLength);
+    println();
+
+    process = process_allocate();
+    process_set_id(process, pid);
+    process_set_pc(process, 0);
+    process_set_registers(process, new_registers);
+    process_set_reg_hi(process, 0);
+    process_set_segment_id(process, g_segment_counter);
+
+    g_segment_counter = g_segment_counter + 1;
+
+    print((int*)"--------------------------");
+    println();
+
+    up_copyArguments(0, (int*)0); // We can't handle arguments for now
+
+    print((int*)"Starting process");
+    println();
+
+    registers = process_get_registers(process);
+    pc = process_get_pc(process);
+    reg_hi = process_get_reg_hi(process);
+    reg_lo = process_get_reg_lo(process);
+
+    g_segment_offset = 0;
+}
+
+void emitSelect() {
+    // Create the symbol table entry fpr sched_yield
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "select", binaryLength, FUNCTION, INT_T, 0);
+
+    // sched_yield doesn't have any arguments
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    
+    emitIFormat(OP_LW, REG_SP, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+
+    emitIFormat(OP_LW, REG_SP, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SELECT);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+void syscall_select() {
+    int prev_pid;
+    int next_pid;
+
+    prev_pid = *(registers + REG_A0);
+    next_pid = *(registers + REG_A1);
+
+    print((int*)"--------------------------");
+    println();
+    print((int*)"System Call select");
+    println();
+
+    print((int*)"Previos process id: ");
+    printInt(prev_pid);
+    println();
+
+    print((int*)"Next process id: ");
+    printInt(next_pid);
+    println();
+    print((int*)"--------------------------");
+    println();
+}
+
+
+// *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
+// -----------------------------------------------------------------
+// ---------------------------     kOS   ---------------------------
+// -----------------------------------------------------------------
+// *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
+
+void kernel(int argc, int* argv) {
+
+    binaryName = (int*) *argv;
+    sched_setparam(1, 4*1024 * 1024, binaryName);
+    select(12, 32);
+
+    argc = argc - 1;
+    argv = argv + 1;
+
+    // pass binaryName as first argument replacing size
+    *argv = (int) binaryName;
+    
+    print((int*)"kernel done");
+    println();
+
+    //emulate(argc, argv);
+}
+
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
 // ---------------------     E M U L A T O R   ---------------------
@@ -3888,8 +4204,19 @@ void emitPutchar() {
 // -----------------------------------------------------------------
 
 int tlb(int vaddr) {
+    // int segment_id;
+    // int offset;
+
     if (vaddr % 4 != 0)
         exception_handler(EXCEPTION_ADDRESSERROR);
+
+    vaddr = vaddr + g_segment_offset;
+    // Get the right offset
+    // if(g_segmentation_active) {
+    //     segment_id = process_get_segment_id(g_running_process);
+    //     offset = segment_get_start(struct_get_element_at(g_segment_table, segment_id));
+    //     vaddr = vaddr + offset;
+    // }
 
     // physical memory is word-addressed for lack of byte-sized data type
     return vaddr / 4;
@@ -3915,19 +4242,34 @@ void fct_syscall() {
 
     if (*(registers+REG_V0) == SYSCALL_EXIT) {
         syscall_exit();
+        pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_READ) {
         syscall_read();
+        pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_WRITE) {
         syscall_write();
+        pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_OPEN) {
         syscall_open();
+        pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_MALLOC) {
         syscall_malloc();
+        pc = pc + 4;
+        // A2
+    } else if (*(registers+REG_V0) == SYSCALL_SCHED_YIELD) {
+        // SYSCALL_SCHED_YIELDs pc gets increased before it's execution
+        syscall_sched_yield();
+    } else if (*(registers+REG_V0) == SYSCALL_SCHED_SETPARAM) {
+        // SYSCALL_SCHED_YIELDs pc gets increased before it's execution
+        syscall_sched_setparam();
+        pc = pc + 4;
+    } else if (*(registers+REG_V0) == SYSCALL_SELECT) {
+        // SYSCALL_SCHED_YIELDs pc gets increased before it's execution
+        syscall_select();
+        pc = pc + 4;
     } else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
     }
-
-    pc = pc + 4;
 }
 
 void fct_nop() {
@@ -4278,6 +4620,17 @@ void fetch() {
 
 void execute() {
 
+    if(DEBUG_1) {
+        printInt(g_ticks);
+        print((int*)" || ");
+        printInt(pc);
+        print((int*)" || ");
+        printInt((int)registers);
+        print((int*)" || ");
+        printInt((int)ir);
+        println();
+    }
+
     if (opcode == OP_SPECIAL) {
         if (function == FCT_NOP) {
             fct_nop();
@@ -4336,9 +4689,9 @@ void run() {
         // A1: Every process is allowed to run TIME_SLICE many ticks
         g_ticks = g_ticks + 1;
         if(g_ticks == TIME_SLICE) {
-             process = process_schedule();
-             process_switch(process);
-             g_ticks = 0;
+            process = process_schedule();
+            process_switch(process);
+            g_ticks = 0;
         } 
     }
 }
@@ -4435,43 +4788,119 @@ void emulate(int argc, int *argv) {
 
     resetInterpreter();
 
-    *(registers+REG_SP) = memorySize - 4;
+    print((int*)"--------------------------");
+    println();
+
+    print((int*)"Loading first process into: ");
+    printInt((int)memory);
+    println();
+
+    //*(registers+REG_SP) = memorySize - 4;
+    *(registers+REG_SP) = 2 * 1024 * 1024; // The kernel gets 2 MB of memory
     *(registers+REG_GP) = binaryLength;
     *(registers+REG_K1) = *(registers+REG_GP);
 
-    up_copyArguments(argc, argv);
+    g_next_segment = 2 * 1024 * 1024;
 
-    //init_readyqueue(); // A1
+    print((int*)"Initial stack pointer: ");
+    printInt(*(registers+REG_SP));
+    println();
+
+    print((int*)"Initial global pointer: ");
+    printInt(*(registers+REG_GP));
+    println();
+
+    g_segment_counter = g_segment_counter + 1;
+
+    print((int*)"Segment counter: ");
+    printInt(g_segment_counter);
+    println();
+
+    print((int*)"--------------------------");
+    println();
+
+    up_copyArguments(argc, argv);
+    // A2
+    // Call INIT_SEGMENTATION _before_ calling INIT_READYQUEUE!
+    //init_segmentation();
+    //init_readyqueue(argc, argv);
+
     run();
+}
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT2 --------------------------
+// -----------------------------------------------------------------
+
+void process_get_segment(int *process, int segment_size, int argc, int *argv) {
+    int *segment;
+    int *new_registers;
+
+    // Insert the newly allocated segment into the segment table
+    segment = segment_init(g_segment_offset, segment_size);
+    struct_set_element_at(g_segment_table, g_segment_counter, segment);
+    // The process only remembers his segment id
+    process_set_segment_id(process, g_segment_counter);
+    // We just added a segment -> increase the segment counter
+    g_segment_counter = g_segment_counter + 1;
+    g_segment_offset = g_segment_offset + segment_size;
+
+    g_running_process = process;
+
+    copyBinaryToMemory();
+
+    resetInterpreter();
+
+    *(registers+REG_SP) = segment_size;
+    *(registers+REG_GP) = binaryLength;
+    *(registers+REG_K1) = *(registers+REG_GP);
+
+    // Each process has it's own registers
+    new_registers = memcpy(registers, 32);
+    // Required otherwise UP_COPYARGUMENTS wouldn't work
+    registers = new_registers;
+    process_set_registers(process, new_registers);
+    // Initialize the rest of the fields
+    process_set_pc(process, 0);
+    process_set_reg_hi(process, reg_hi);
+    process_set_reg_lo(process, reg_lo);
+
+    up_copyArguments(argc, argv);
+}
+
+void init_segmentation() {
+    g_segment_table = struct_init(100); // Maximum of 100 Segments
+    g_segment_counter = 0;
+    g_segment_offset = 0;
+    g_segmentation_active = 1;
 }
 
 // -----------------------------------------------------------------
 // -------------------------- ASSIGNMENT1 --------------------------
 // -----------------------------------------------------------------
 
-void init_readyqueue() {
-    int *process;
-    int *new_registers;
-    int *new_memory;
+void init_readyqueue(int argc, int *argv) {
     int i;
+    int *process;
 
     g_ticks = 0;
     g_readyqueue = list_init();
-    NUMBER_OF_INSTANCES = 12; // TODO: Make dynamic
-    TIME_SLICE = 93; // TODO: Make dynamic
+    
+    TIME_SLICE = 10;
+    NUMBER_OF_INSTANCES = 32;
 
     i = 0;
     while(i < NUMBER_OF_INSTANCES) {
-        new_registers = memcpy(registers, 32); // 32 Registers
-        new_memory = memcpy(memory, MEMORY_SIZE);
-
-        if(i == 0) {
-            g_running_process = process_init(i, new_registers, new_memory, reg_hi, reg_lo);
+        if(i == NUMBER_OF_INSTANCES - 1) {
+            g_running_process = process_allocate();
+            process_set_id(g_running_process, i);
+            process_get_segment(g_running_process, 1024 * 1024, argc, argv);
         } else {
-            process = process_init(i, new_registers, new_memory, reg_hi, reg_lo);
-            list_push_front(g_readyqueue, process);
+            process = process_allocate();
+            process_set_id(process, i);
+            process_get_segment(process, 1024 * 1024, argc, argv);
+            list_push_back(g_readyqueue, process);
         }
-
         i = i + 1;
     }
 }
@@ -4479,8 +4908,11 @@ void init_readyqueue() {
 // Returns the next process to run
 int *process_schedule() {
     int *process;
+    
+    if(list_is_empty(g_readyqueue))
+        return g_running_process;
 
-    process = list_entry_get_data(list_pop_back(g_readyqueue));
+    process = list_entry_get_data(list_pop_front(g_readyqueue));
 
     return process;
 }
@@ -4494,21 +4926,27 @@ void process_switch(int *process) {
     // Save the state of the current process
     process_set_pc(g_running_process, pc);
     process_set_registers(g_running_process, registers);
-    process_set_memory(g_running_process, memory);
+    //process_set_memory(g_running_process, memory);
     process_set_reg_hi(g_running_process, reg_hi);
     process_set_reg_lo(g_running_process, reg_lo);
 
-    list_push_front(g_readyqueue, g_running_process);
+    list_push_back(g_readyqueue, g_running_process);
 
     // Switch to PROCESS
     pc = process_get_pc(process);
     registers = process_get_registers(process);
-    memory = process_get_memory(process);
+    //memory = process_get_memory(process);
     reg_hi = process_get_reg_hi(process);
     reg_lo = process_get_reg_lo(process);
 
     // We get a new running process
     g_running_process = process;
+
+    if(DEBUG_1) {
+        print((int*)"switch to process ");
+        printInt(process_get_id(process));
+        println();
+    }
 }
 
 // NUM ... Number of bytes
@@ -4530,24 +4968,62 @@ void printInt(int i) {
     print(itoa(i, string_buffer, 10, 0));
 }
 
-int int_length(int i) {
-    int j;
-    int length;
+// -----------------------------------------------------------------
+// ----------------------------- STRUCT ----------------------------
+// -----------------------------------------------------------------
 
-    if(i == 0)
-        return 1;
-    
-    if(i < 0)
-        i = (-1)*i;
+int *struct_init(int size) {
+    int *array;
 
-    j = 1;
-    length = 0;
-    while(i > j - 1) {
-        j = j * 10;
-        length = length + 1;
-    }
+    array = (int*)malloc(size * 4);
 
-    return length;
+    return array;
+}
+
+int *struct_get_element_at(int *array, int i) {
+    return (int*)*(array + i);
+}
+
+void struct_set_element_at(int *array, int i, int *value) {
+    *(array + i) = (int)value;
+}
+
+// -----------------------------------------------------------------
+// ----------------------------- SEGMENT ---------------------------
+// -----------------------------------------------------------------
+
+int *segment_init(int start, int size) {
+    int *segment;
+
+    // process:
+    // +----+-------+
+    // |  0 | start |
+    // |  1 | size  |
+    // +----+-------+
+
+    segment = (int*)malloc(2 * 4);
+    segment_set_start(segment, start);
+    segment_set_size(segment, size);
+
+    return segment;
+}
+
+// Getters
+int segment_get_start(int *segment) {
+    return *segment;
+}
+
+int segment_get_size(int *segment) {
+    return *(segment + 1);
+}
+
+// Setters
+void segment_set_start(int *segment, int start) {
+    *segment = start;
+}
+
+void segment_set_size(int *segment, int size) {
+    *(segment + 1) = size;
 }
 
 // -----------------------------------------------------------------
@@ -4905,6 +5381,15 @@ void list_entry_set_data(int *entry, int *data) {
 // ---------------------------- PROCESS ----------------------------
 // -----------------------------------------------------------------
 
+int  *process_allocate() {
+    int *process;
+
+    process = (int*)malloc(7 * 4);
+
+    return process;
+}
+
+// TODO: Change memory to segment
 int *process_init(int id, int *registers, int *memory, int reg_hi, int reg_lo) {
     int *process;
 
@@ -4916,9 +5401,10 @@ int *process_init(int id, int *registers, int *memory, int reg_hi, int reg_lo) {
     // |  3 | ptr to memory    |
     // |  4 | reg_hi           |
     // |  5 | reg_lo           |
+    // |  6 | segment_id       |
     // +----+------------------+
 
-    process = (int*)malloc(6 * 4);
+    process = (int*)malloc(7 * 4);
     process_set_id(process, id);
     process_set_pc(process, 0); // Initially always 0
     process_set_registers(process, registers);
@@ -4954,6 +5440,10 @@ int process_get_reg_lo(int *process) {
     return *(process + 5);
 }
 
+int process_get_segment_id(int *process) {
+    return *(process + 6);
+}
+
 // Setters
 void process_set_id(int *process, int id) {
     *process = id;
@@ -4977,6 +5467,10 @@ void process_set_reg_hi(int *process, int reg_hi) {
 
 void process_set_reg_lo(int *process, int reg_lo) {
     *(process + 5) = reg_lo;
+}
+
+void process_set_segment_id(int *process, int segment_id) {
+    *(process + 6) = segment_id;
 }
 
 void print_process_list(int *list) {
@@ -5012,7 +5506,6 @@ void list_test() {
     int *process;
     int *data;
     int id;
-    int i;
 
     println();
     print((int*) "Ready List Test");
@@ -5048,7 +5541,6 @@ void list_test() {
     print_process_list(list);
     
     sched_yield();
-    print((int*) "x");
 
     list = list_init();
     
@@ -5057,14 +5549,6 @@ void list_test() {
     list_push_front(list, process);
     print_process_list(list);
     
-    i = 0;
-    while(i < 10) {
-        sched_yield();
-        print((int*) "x");
-        println();
-        i = i + 1;
-    }
-
     print((int*) "pop back ");
     data = list_entry_get_data(list_pop_back(list));
     id = process_get_id(data);
@@ -5159,10 +5643,6 @@ void list_test() {
     println();
     print_process_list(list);
 
-    sched_yield();
-    print((int*) "x");
-    println();
-
     print((int*) "pop front ");
     data = list_entry_get_data(list_pop_front(list));
     id = process_get_id(data);
@@ -5177,21 +5657,19 @@ void list_test() {
     println();
     print_process_list(list);
 
-    print((int*) "pop back ");
-    data = list_entry_get_data(list_pop_back(list));
+    print((int*) "pop front ");
+    data = list_entry_get_data(list_pop_front(list));
     id = process_get_id(data);
     printInt(id);
     println();
     print_process_list(list);
 
-    print((int*) "pop back ");
-    data = list_entry_get_data(list_pop_back(list));
+    print((int*) "pop front ");
+    data = list_entry_get_data(list_pop_front(list));
     id = process_get_id(data);
     printInt(id);
     println();
     print_process_list(list);
-
-    sched_yield();
 }
 
 // -----------------------------------------------------------------
@@ -5254,9 +5732,13 @@ int selfie(int argc, int* argv) {
                 return 0;
             } else if (stringCompare((int*) *argv, (int*) "-k")) {
                 print(selfieName);
-                list_test();
                 print((int*) ": selfie -k size ... not yet implemented");
                 println();
+
+                argc = argc - 1;
+                argv = argv + 1;
+
+                kernel(argc, argv);
 
                 return 0;
             } else
@@ -5268,6 +5750,12 @@ int selfie(int argc, int* argv) {
 }
 
 int main(int argc, int *argv) {
+    // A2
+    g_segment_offset = 0;
+    g_next_segment = 0;
+    g_segmentation_active = 0;
+    DEBUG_1 = 0;
+
     initLibrary();
     initScanner();
     initRegister();
@@ -5275,12 +5763,15 @@ int main(int argc, int *argv) {
     
     initInterpreter();
 
-    selfieName = (int*) *argv;
-
-    argc = argc - 1;
-    argv = argv + 1;
-
+    //print((int*)"this is a test");
+    //println();
     list_test();
+
+    // selfieName = (int*) *argv;
+
+    // argc = argc - 1;
+    // argv = argv + 1;
+
     // if (selfie(argc, (int*) argv) != 0) {
     //     print(selfieName);
     //     print((int*) ": usage: selfie { -c source | -o binary | -l binary } [ -m size ... | -k size ... ] ");

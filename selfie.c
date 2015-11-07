@@ -4,7 +4,7 @@
 //
 // Selfie is a project of the Computational Systems Group at the
 // Department of Computer Sciences of the University of Salzburg
-// in Austria. For further information and code please refer to:
+// in Austria. For further information and code please refer to
 //
 // http://selfie.cs.uni-salzburg.at
 //
@@ -297,28 +297,50 @@ void resetScanner() {
 }
 
 // -----------------------------------------------------------------
-// -------------------------- ASSIGNMENT2 --------------------------
-// -----------------------------------------------------------------
-
-void init_segmentation();
-void process_get_segment(int *process, int segment_size, int argc, int *argv);
-
-// -----------------------------------------------------------------
 // -------------------------- ASSIGNMENT1 --------------------------
 // -----------------------------------------------------------------
 
 // NUM ... Number of bytes, returns destination
-int  *memcpy(int *source, int num);
+//int  *memcpy(int *source, int num);
 void printInt(int i);
-void init_readyqueue(int argc, int *argv);
-int  *process_schedule();
-void process_switch(int *process);
+//void init_readyqueue(int argc, int *argv);
+//int  *process_schedule();
+//void process_switch(int *process);
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT2 --------------------------
+// -----------------------------------------------------------------
+
+void init_segmentation();
+int *process_init_segment(int pid, int segment_size);
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT3 --------------------------
+// -----------------------------------------------------------------
+
+void process_save(int *process);
+void process_restore(int *process);
+void trap_to_kernel();
+
+// *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
+// -----------------------------------------------------------------
+// ---------------------------     kOS   ---------------------------
+// -----------------------------------------------------------------
+// *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
+
+void kernel(int argc, int* argv);
+void kernel_init(int argc, int* argv);
+void kernel_run();
+void kernel_load_executable(int pid, int segment_size, int *filename);
+int  kernel_schedule_process();
+void kernel_switch_process(int pid);
 
 // -----------------------------------------------------------------
 // ----------------------------- DEBUG -----------------------------
 // -----------------------------------------------------------------
 
 int DEBUG_1; // Debug first assignment
+int DEBUG_2;
 
 // -----------------------------------------------------------------
 // ----------------------------- STRUCT ----------------------------
@@ -370,6 +392,7 @@ int  *list_pop_back(int *list);
 void list_insert_at(int *list, int index, int *data);
 int  *list_remove_at(int *list, int index);
 int  *list_get_entry_at(int *list, int index);
+int  *list_find_entry_by(int *list, int value, int field_nr);
 
 int  *list_entry_get_next(int *entry);
 int  *list_entry_get_prev(int *entry);
@@ -390,7 +413,7 @@ void list_test();
 // -----------------------------------------------------------------
 
 int  *process_allocate();
-int  *process_init(int id, int *registers, int *memory, int reg_hi, int reg_lo);
+int  *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_offset);
 
 int  process_get_id(int *process);
 int  process_get_pc(int *process);
@@ -398,7 +421,7 @@ int  *process_get_registers(int *process);
 int  *process_get_memory(int *process);
 int  process_get_reg_hi(int *process);
 int  process_get_reg_lo(int *process);
-int  process_get_segment_id(int *process);
+int  process_get_segment_offset(int *process);
 
 
 void process_set_id(int *process, int id);
@@ -407,24 +430,29 @@ void process_set_registers(int *process, int *registers);
 void process_set_memory(int *process, int *memory);
 void process_set_reg_hi(int *process, int reg_hi);
 void process_set_reg_lo(int *process, int reg_lo);
-void process_set_segment_id(int *process, int segment_id);
+void process_set_segment_offset(int *process, int segment_id);
 
 void print_process_list(int *list);
 
 
 // ------------------------ GLOBAL VARIABLES -----------------------
 
-// A1
+// KERNEL
 int  *g_readyqueue;
+int  g_running_process_id;
+
+// EMULATOR
 int  *g_running_process;
-int  g_ticks;
-// A2
+int  *g_kernel_process;
+int  *g_process_table;
 int  *g_segment_table;
 int  g_segment_counter;
 int  g_segment_offset;
 int  g_segmentation_active;
+int  g_next_segment;
+int  g_ticks;
+int  g_interrupts_active;
 
-// A1
 int  NUMBER_OF_INSTANCES;
 int  TIME_SLICE;
 int  MEMORY_SIZE;
@@ -800,6 +828,16 @@ void emitPutchar();
 void emitSchedYield();
 void syscall_sched_yield();
 
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT3 --------------------------
+// -----------------------------------------------------------------
+
+void emitSchedSetParam();
+void syscall_sched_setparam();
+
+void emitSelect();
+void syscall_select();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int SYSCALL_EXIT    = 4001;
@@ -810,6 +848,8 @@ int SYSCALL_MALLOC  = 5001;
 int SYSCALL_GETCHAR = 5002;
 // A2
 int SYSCALL_SCHED_YIELD = 5003;
+int SYSCALL_SCHED_SETPARAM = 5004;
+int SYSCALL_SELECT = 5005;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -3296,6 +3336,9 @@ void compile() {
     emitPutchar();
     // A2
     emitSchedYield();
+    // A3
+    emitSchedSetParam();
+    emitSelect();
 
     // parser
     gr_cstar();
@@ -3950,20 +3993,276 @@ void emitSchedYield() {
 }
 
 void syscall_sched_yield() {
+    trap_to_kernel();
+
+    print((int*) "///////////////////////////////////////////////");
+    println();
+    print((int*) "Call sched_yield");
+    println();
+}
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT3 --------------------------
+// -----------------------------------------------------------------
+
+// PID 
+void emitSchedSetParam() {
+    // Create the symbol table entry fpr sched_yield
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "alarm", binaryLength, FUNCTION, INT_T, 0);
+
+    emitIFormat(OP_LW, REG_SP, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // File name
+
+    emitIFormat(OP_LW, REG_SP, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // Segment Size
+
+    emitIFormat(OP_LW, REG_SP, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // Process ID
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SCHED_SETPARAM);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+// Loads the file from FILNAME onto memory and allocates a segment
+void syscall_sched_setparam() {
+    int pid;
+    int segment_size;
+    int vaddr;
+
     int *process;
+    int *segment;
+    int *new_registers;
 
-    // We need to increase the pc before the actual switch
-    pc = pc + 4;
-    process = process_schedule();
-    process_switch(process);
-    // Reset ticks
-    // TODO: Next process gets one tick too few
-    g_ticks = 0;
+    pid = *(registers + REG_A0);
+    segment_size = *(registers + REG_A1);
+    vaddr = *(registers + REG_A2);
+    binaryName = memory + tlb(vaddr);
 
-    if (DEBUG_1) {
-        print((int*)"call sched_yield");
+    // Load the new file
+    g_segment_offset = g_next_segment;
+    load();
+    copyBinaryToMemory();
+    g_segment_offset = 0;
+
+    process_init_segment(pid, segment_size);
+}
+
+void emitSelect() {
+    // Create the symbol table entry fpr sched_yield
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "select", binaryLength, FUNCTION, INT_T, 0);
+
+    // sched_yield doesn't have any arguments
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    
+    emitIFormat(OP_LW, REG_SP, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+
+    emitIFormat(OP_LW, REG_SP, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SELECT);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+void syscall_select() {
+    int prev_pid;
+    int next_pid;
+
+    int *prev_entry;
+    int *next_entry;
+
+    int *prev_process;
+    int *next_process;
+
+    prev_pid = *(registers + REG_A0);
+    next_pid = *(registers + REG_A1);
+
+    print((int*) "///////////////////////////////////////////////");
+    println();
+
+    print((int*)"System call select");
+    println();
+
+    print((int*)"Previous process id: ");
+    printInt(prev_pid);
+    println();
+
+    print((int*)"Next process id: ");
+    printInt(next_pid);
+    println();
+
+    print_process_list(g_process_table);
+
+    prev_entry = list_find_entry_by(g_process_table, prev_pid, 0);
+    next_entry = list_find_entry_by(g_process_table, next_pid, 0);
+
+    prev_process = list_entry_get_data(prev_entry);
+    next_process = list_entry_get_data(next_entry);
+
+    process_save(prev_process);
+    process_restore(next_process);
+    g_running_process = next_process;
+}
+
+void process_save(int *process) {
+    int i;
+
+    if(DEBUG_2) { 
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*) "Save process ...");
         println();
     }
+
+    process_set_pc(process, pc);
+    process_set_registers(process, registers);
+    process_set_reg_hi(process, reg_hi);
+    process_set_reg_lo(process, reg_lo);
+
+    if(DEBUG_2) {  
+        print((int*) "id: ");
+        printInt(process_get_id(process));
+        println();
+
+        print((int*) "PC: ");
+        printInt(process_get_pc(process));
+        println();
+
+        print((int*) "reg_hi: ");
+        printInt(process_get_reg_hi(process));
+        println();
+
+        print((int*) "reg_lo: ");
+        printInt(process_get_reg_lo(process));
+        println();
+
+        print((int*) "Registers: ");
+        i = 0;
+        while(i < 32) {
+            printInt(*(process_get_registers(process) + i));
+            print((int*) " ");
+            i = i + 1;
+        }
+        println();
+    }
+}
+
+void process_restore(int *process) {
+    int i;
+
+    if(DEBUG_2) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*) "Restore process ...");
+        println();
+    }  
+
+    pc = process_get_pc(process);
+    registers = process_get_registers(process);
+    reg_hi = process_get_reg_hi(process);
+    reg_lo = process_get_reg_lo(process);
+    g_segment_offset = process_get_segment_offset(process);
+
+    if(DEBUG_2) {
+        print((int*) "id: ");
+        printInt(process_get_id(process));
+        println();
+
+        print((int*) "PC: ");
+        printInt(pc);
+        println();
+
+        print((int*) "reg_hi: ");
+        printInt(reg_hi);
+        println();
+
+        print((int*) "reg_lo: ");
+        printInt(reg_lo);
+        println();
+
+        print((int*) "Segment offset: ");
+        printInt(g_segment_offset);
+        println();
+
+        print((int*) "Register Address: ");
+        printInt(registers);
+        println();
+
+        print((int*) "Registers: ");
+        i = 0;
+        while(i < 32) {
+            printInt(*(registers + i));
+            print((int*) " ");
+            i = i + 1;
+        }
+        println();
+
+        print((int*) "Stack pointer: ");
+        printInt(*(registers + REG_SP));
+        println();
+
+        print((int*) "Global pointer: ");
+        printInt(*(registers + REG_GP));
+        println();
+    }
+}
+
+
+// *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
+// -----------------------------------------------------------------
+// ---------------------------     kOS   ---------------------------
+// -----------------------------------------------------------------
+// *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
+
+void kernel(int argc, int* argv) {
+    kernel_init(argc, argv);
+    kernel_run();
+}
+
+void kernel_init(int argc, int* argv) {
+    g_readyqueue = list_init();
+    g_running_process_id = 0;
+
+    binaryName = (int*) *argv;
+    kernel_load_executable(1, 4*1024 * 1024, binaryName);
+    kernel_load_executable(2, 4*1024 * 1024, binaryName);
+    kernel_load_executable(3, 1*1024 * 1024, binaryName);
+    kernel_load_executable(4, 3*1024 * 1024, binaryName);
+}
+
+void kernel_run() {
+    int next_pid;
+
+    while(1) {
+        next_pid = kernel_schedule_process();
+        kernel_switch_process(next_pid);
+    }
+}
+
+void kernel_load_executable(int pid, int segment_size, int *filename) {
+    // The ready queue only stored PIDs!
+    list_push_back(g_readyqueue, (int*) pid);
+    alarm(pid, segment_size, filename);
+}
+
+int kernel_schedule_process() {
+    return (int) list_entry_get_data(list_pop_front(g_readyqueue));
+}
+
+void kernel_switch_process(int pid) {
+    if(g_running_process_id > 0)
+        list_push_back(g_readyqueue, (int*) g_running_process_id);
+    
+    g_running_process_id = pid;
+    select(0, pid);
 }
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -3977,18 +4276,11 @@ void syscall_sched_yield() {
 // -----------------------------------------------------------------
 
 int tlb(int vaddr) {
-    int segment_id;
-    int offset;
 
     if (vaddr % 4 != 0)
         exception_handler(EXCEPTION_ADDRESSERROR);
 
-    // Get the right offset
-    if(g_segmentation_active) {
-        segment_id = process_get_segment_id(g_running_process);
-        offset = segment_get_start(struct_get_element_at(g_segment_table, segment_id));
-        vaddr = vaddr + offset;
-    }
+    vaddr = vaddr + g_segment_offset;
 
     // physical memory is word-addressed for lack of byte-sized data type
     return vaddr / 4;
@@ -4027,10 +4319,16 @@ void fct_syscall() {
     } else if (*(registers+REG_V0) == SYSCALL_MALLOC) {
         syscall_malloc();
         pc = pc + 4;
-        // A2
+        // A2-A3
     } else if (*(registers+REG_V0) == SYSCALL_SCHED_YIELD) {
-        // SYSCALL_SCHED_YIELDs pc gets increased before it's execution
+        pc = pc + 4;
         syscall_sched_yield();
+    } else if (*(registers+REG_V0) == SYSCALL_SCHED_SETPARAM) {
+        syscall_sched_setparam();
+        pc = pc + 4;
+    } else if (*(registers+REG_V0) == SYSCALL_SELECT) {
+        pc = pc + 4;
+        syscall_select();
     } else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
     }
@@ -4389,9 +4687,13 @@ void execute() {
         print((int*)" || ");
         printInt(pc);
         print((int*)" || ");
+        printInt(opcode);
+        print((int*)" || ");
         printInt((int)registers);
         print((int*)" || ");
         printInt((int)ir);
+        print((int*)" || ");
+        printInt((int)g_segment_offset);
         println();
     }
 
@@ -4441,7 +4743,7 @@ void execute() {
 }
 
 void run() {
-    int *process;
+    //int *process;
 
     while (1) {
         fetch();
@@ -4451,12 +4753,13 @@ void run() {
         post_debug();
 
         // A1: Every process is allowed to run TIME_SLICE many ticks
-        g_ticks = g_ticks + 1;
-        if(g_ticks == TIME_SLICE) {
-            process = process_schedule();
-            process_switch(process);
-            g_ticks = 0;
-        } 
+        
+        // g_ticks = g_ticks + 1;
+        // if(g_ticks == TIME_SLICE) {
+        //     process = process_schedule();
+        //     process_switch(process);
+        //     g_ticks = 0;
+        // } 
     }
 }
 
@@ -4540,6 +4843,8 @@ void copyBinaryToMemory() {
 }
 
 void emulate(int argc, int *argv) {
+    int segment_size;
+
     print(selfieName);
     print((int*) ": this is selfie's mipster executing ");
     print(binaryName);
@@ -4548,149 +4853,254 @@ void emulate(int argc, int *argv) {
     print((int*) "MB of memory");
     println();
 
-    // A2
-    // Call INIT_SEGMENTATION _before_ calling INIT_READYQUEUE!
+    // Initialize the process and segment tables
     init_segmentation();
-    init_readyqueue(argc, argv);
+    segment_size = 2 * 1024 * 1024;
+
+    copyBinaryToMemory();
+
+    resetInterpreter();
+
+    print((int*) "///////////////////////////////////////////////");
+    println();
+
+    print((int*)"Loading the kernel process!");
+    println();
+
+    *(registers+REG_SP) = segment_size - 4; // The kernel gets 2 MB of memory
+    *(registers+REG_GP) = binaryLength;
+    *(registers+REG_K1) = *(registers+REG_GP);
+
+    g_running_process = process_init_segment(0, segment_size);
+    g_kernel_process = g_running_process;
+
+    up_copyArguments(argc, argv);
 
     run();
+}
+
+int *process_init_segment(int pid, int segment_size) {
+    int *process;
+    int *new_registers;
+    int i;
+
+    new_registers =  malloc(32 * 4);
+    *(new_registers+REG_SP) = segment_size - 4; // The kernel gets 2 MB of memory
+    *(new_registers+REG_GP) = binaryLength;
+    *(new_registers+REG_K1) = *(new_registers+REG_GP);
+
+    process = process_allocate();
+    process_set_id(process, pid);
+    process_set_pc(process, 0);
+    process_set_registers(process, new_registers);
+    process_set_reg_hi(process, 0);
+    process_set_reg_lo(process, 0);
+    process_set_segment_offset(process, g_next_segment);
+    list_push_back(g_process_table, process);
+
+    g_segment_counter = g_segment_counter + 1;
+    g_next_segment = segment_size;
+
+    if(DEBUG_2) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*) "Allocating a new segment");
+        println();
+
+        print((int*) "PID: ");
+        printInt(pid);
+        println();
+
+        print((int*) "Segment offset: ");
+        printInt(process_get_segment_offset(process));
+        println();
+
+        print((int*) "Segment size: ");
+        printInt(segment_size);
+        println();
+
+        print((int*) "Initial stack pointer: ");
+        printInt(*(new_registers+REG_SP));
+        println();
+
+        print((int*) "Initial global pointer: ");
+        printInt(*(new_registers+REG_GP));
+        println();
+
+        print((int*) "Initial heap pointer: ");
+        printInt(*(new_registers+REG_K1));
+        println();
+
+        print((int*) "Process table: ");
+        print_process_list(g_process_table);
+
+        print((int*) "Register Address: ");
+        printInt(process_get_registers(process));
+        println();
+
+        print((int*) "Registers: ");
+        i = 0;
+        while(i < 32) {
+            printInt(*(new_registers + i));
+            print((int*) " ");
+            i = i + 1;
+        }
+        println();
+    }
+
+    return process;
+}
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT3 --------------------------
+// -----------------------------------------------------------------
+
+void trap_to_kernel() {
+    process_save(g_running_process);
+    process_restore(g_kernel_process);
 }
 
 // -----------------------------------------------------------------
 // -------------------------- ASSIGNMENT2 --------------------------
 // -----------------------------------------------------------------
 
-void process_get_segment(int *process, int segment_size, int argc, int *argv) {
-    int *segment;
-    int *new_registers;
+//void process_get_segment(int *process, int segment_size, int argc, int *argv) {
+    // int *segment;
+    // int *new_registers;
 
-    // Insert the newly allocated segment into the segment table
-    segment = segment_init(g_segment_offset, segment_size);
-    struct_set_element_at(g_segment_table, g_segment_counter, segment);
-    // The process only remembers his segment id
-    process_set_segment_id(process, g_segment_counter);
-    // We just added a segment -> increase the segment counter
-    g_segment_counter = g_segment_counter + 1;
-    g_segment_offset = g_segment_offset + segment_size;
+    // // Insert the newly allocated segment into the segment table
+    // segment = segment_init(g_segment_offset, segment_size);
+    // struct_set_element_at(g_segment_table, g_segment_counter, segment);
+    // // The process only remembers his segment id
+    // process_set_segment_offset(process, g_segment_counter);
+    // // We just added a segment -> increase the segment counter
+    // g_segment_counter = g_segment_counter + 1;
+    // g_segment_offset = g_segment_offset + segment_size;
 
-    g_running_process = process;
+    // g_running_process = process;
 
-    copyBinaryToMemory();
+    // copyBinaryToMemory();
 
-    resetInterpreter();
+    // resetInterpreter();
 
-    *(registers+REG_SP) = segment_size;
-    *(registers+REG_GP) = binaryLength;
-    *(registers+REG_K1) = *(registers+REG_GP);
+    // *(registers+REG_SP) = segment_size;
+    // *(registers+REG_GP) = binaryLength;
+    // *(registers+REG_K1) = *(registers+REG_GP);
 
-    // Each process has it's own registers
-    new_registers = memcpy(registers, 32);
-    // Required otherwise UP_COPYARGUMENTS wouldn't work
-    registers = new_registers;
-    process_set_registers(process, new_registers);
-    // Initialize the rest of the fields
-    process_set_pc(process, 0);
-    process_set_reg_hi(process, reg_hi);
-    process_set_reg_lo(process, reg_lo);
+    // // Each process has it's own registers
+    // new_registers = memcpy(registers, 32);
+    // // Required otherwise UP_COPYARGUMENTS wouldn't work
+    // registers = new_registers;
+    // process_set_registers(process, new_registers);
+    // // Initialize the rest of the fields
+    // process_set_pc(process, 0);
+    // process_set_reg_hi(process, reg_hi);
+    // process_set_reg_lo(process, reg_lo);
 
-    up_copyArguments(argc, argv);
-}
+    // up_copyArguments(argc, argv);
+//}
 
 void init_segmentation() {
-    g_segment_table = struct_init(100); // Maximum of 100 Segments
-    g_segment_counter = 0;
+    g_process_table = list_init();
+    g_segment_table = struct_init(128);
     g_segment_offset = 0;
-    g_segmentation_active = 1;
+    g_next_segment = 0;
+    g_segmentation_active = 0;
+
+    g_ticks = 0;
+    g_interrupts_active = 0;
+    TIME_SLICE = 2;
 }
 
 // -----------------------------------------------------------------
 // -------------------------- ASSIGNMENT1 --------------------------
 // -----------------------------------------------------------------
 
-void init_readyqueue(int argc, int *argv) {
-    int i;
-    int *process;
+//void init_readyqueue(int argc, int *argv) {
+    // int i;
+    // int *process;
 
-    g_ticks = 0;
-    g_readyqueue = list_init();
+    // g_ticks = 0;
+    // g_readyqueue = list_init();
     
-    TIME_SLICE = 10;
-    NUMBER_OF_INSTANCES = 32;
+    // TIME_SLICE = 10;
+    // NUMBER_OF_INSTANCES = 32;
 
-    i = 0;
-    while(i < NUMBER_OF_INSTANCES) {
-        if(i == NUMBER_OF_INSTANCES - 1) {
-            g_running_process = process_allocate();
-            process_set_id(g_running_process, i);
-            process_get_segment(g_running_process, 1024 * 1024, argc, argv);
-        } else {
-            process = process_allocate();
-            process_set_id(process, i);
-            process_get_segment(process, 1024 * 1024, argc, argv);
-            list_push_back(g_readyqueue, process);
-        }
-        i = i + 1;
-    }
-}
+    // i = 0;
+    // while(i < NUMBER_OF_INSTANCES) {
+    //     if(i == NUMBER_OF_INSTANCES - 1) {
+    //         g_running_process = process_allocate();
+    //         process_set_id(g_running_process, i);
+    //         process_get_segment(g_running_process, 1024 * 1024, argc, argv);
+    //     } else {
+    //         process = process_allocate();
+    //         process_set_id(process, i);
+    //         process_get_segment(process, 1024 * 1024, argc, argv);
+    //         list_push_back(g_readyqueue, process);
+    //     }
+    //     i = i + 1;
+    // }
+//}
 
 // Returns the next process to run
-int *process_schedule() {
-    int *process;
+//int *process_schedule() {
+    // int *process;
     
-    if(list_is_empty(g_readyqueue))
-        return g_running_process;
+    // if(list_is_empty(g_readyqueue))
+    //     return g_running_process;
 
-    process = list_entry_get_data(list_pop_front(g_readyqueue));
+    // process = list_entry_get_data(list_pop_front(g_readyqueue));
 
-    return process;
-}
+    // return process;
+//}
 
 // Switches to PROCESS
-void process_switch(int *process) {
+//void process_switch(int *process) {
 
-    if(process == g_running_process)
-        return;
+    // if(process == g_running_process)
+    //     return;
 
-    // Save the state of the current process
-    process_set_pc(g_running_process, pc);
-    process_set_registers(g_running_process, registers);
-    //process_set_memory(g_running_process, memory);
-    process_set_reg_hi(g_running_process, reg_hi);
-    process_set_reg_lo(g_running_process, reg_lo);
+    // // Save the state of the current process
+    // process_set_pc(g_running_process, pc);
+    // process_set_registers(g_running_process, registers);
+    // //process_set_memory(g_running_process, memory);
+    // process_set_reg_hi(g_running_process, reg_hi);
+    // process_set_reg_lo(g_running_process, reg_lo);
 
-    list_push_back(g_readyqueue, g_running_process);
+    // list_push_back(g_readyqueue, g_running_process);
 
-    // Switch to PROCESS
-    pc = process_get_pc(process);
-    registers = process_get_registers(process);
-    //memory = process_get_memory(process);
-    reg_hi = process_get_reg_hi(process);
-    reg_lo = process_get_reg_lo(process);
+    // // Switch to PROCESS
+    // pc = process_get_pc(process);
+    // registers = process_get_registers(process);
+    // //memory = process_get_memory(process);
+    // reg_hi = process_get_reg_hi(process);
+    // reg_lo = process_get_reg_lo(process);
 
-    // We get a new running process
-    g_running_process = process;
+    // // We get a new running process
+    // g_running_process = process;
 
-    if(DEBUG_1) {
-        print((int*)"switch to process ");
-        printInt(process_get_id(process));
-        println();
-    }
-}
+    // if(DEBUG_1) {
+    //     print((int*)"switch to process ");
+    //     printInt(process_get_id(process));
+    //     println();
+    // }
+//}
 
 // NUM ... Number of bytes
-int *memcpy(int *source, int num) {
-    int i;
-    int *dest;
+//int *memcpy(int *source, int num) {
+    // int i;
+    // int *dest;
 
-    i = 0;
-    dest = (int*)malloc(num * 4);
-    while(i < num) {
-        *(dest + i) = *(source + i);
-        i = i + 1;
-    }
+    // i = 0;
+    // dest = (int*)malloc(num * 4);
+    // while(i < num) {
+    //     *(dest + i) = *(source + i);
+    //     i = i + 1;
+    // }
 
-    return dest;
-}
+    // return dest;
+//}
 
 void printInt(int i) {
     print(itoa(i, string_buffer, 10, 0));
@@ -4874,7 +5284,7 @@ int *list_pop_front(int *list) {
     int size;
     
     if(list_is_empty(list))
-        return 0;
+        return (int*)0;
 
     head = list_get_head(list);
     next = list_entry_get_next(head);
@@ -4897,7 +5307,7 @@ int *list_pop_back(int *list) {
     int size;
 
     if(list_is_empty(list))
-        return 0;
+        return (int*)0;
     
     tail = list_get_tail(list);
     prev = list_entry_get_prev(tail);
@@ -4950,7 +5360,7 @@ int *list_remove_at(int *list, int index) {
 
     // Check bounds
     if(list_is_in_bounds(list, index) == 0)
-        return 0;
+        return (int*)0;
 
     // If it's the first index just change the head
     size = list_get_size(list);
@@ -4991,29 +5401,30 @@ int *list_get_entry_at(int *list, int index) {
         i = i + 1;
     }
 
-    return 0;
+    return (int*)0;
 }
-
 
 // Return the entry with VALUE at FIELD_NR
 int *list_find_entry_by(int *list, int value, int field_nr) {
+    int i;
+    int size;
     int *head;
     int current_value;
+ 
+    size = list_get_size(list);
 
-    // In all but the first recursion steps this basically calls list_entry_get_next(...)!
-    // This works because the NEXT element in a list entry and the HEAD element in the 
-    // actual list are at the same spot (FIELD_NR 0)!
     head = list_get_head(list);
+    i = 0;
+    while(i < size) {
+        current_value = *(list_entry_get_data(head + field_nr));
 
-    if((int)head == 0)
-        return 0;
+        if(current_value == value)
+            return head;
+        head = list_entry_get_next(head);
+        i = i + 1;
+    }
 
-    current_value = *(list_entry_get_data(head + field_nr));
-
-    if(current_value == value)
-        return head;
-
-    list_find_entry_by(head, value, field_nr);
+    return (int*)0;
 }
 
 int list_is_in_bounds(int *list, int index) {
@@ -5112,12 +5523,13 @@ void list_entry_set_data(int *entry, int *data) {
 int  *process_allocate() {
     int *process;
 
-    process = (int*)malloc(7 * 4);
+    process = (int*)malloc(6 * 4);
 
     return process;
 }
 
-int *process_init(int id, int *registers, int *memory, int reg_hi, int reg_lo) {
+// TODO: Change memory to segment
+int *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_offset) {
     int *process;
 
     // process:
@@ -5125,19 +5537,18 @@ int *process_init(int id, int *registers, int *memory, int reg_hi, int reg_lo) {
     // |  0 | id               |
     // |  1 | pc               |
     // |  2 | ptr to registers |
-    // |  3 | ptr to memory    |
-    // |  4 | reg_hi           |
-    // |  5 | reg_lo           |
-    // |  6 | segment_id       |
+    // |  3 | reg_hi           |
+    // |  4 | reg_lo           |
+    // |  5 | segment_id       |
     // +----+------------------+
 
-    process = (int*)malloc(7 * 4);
+    process = (int*)malloc(6 * 4);
     process_set_id(process, id);
     process_set_pc(process, 0); // Initially always 0
     process_set_registers(process, registers);
-    process_set_memory(process, memory);
     process_set_reg_hi(process, reg_hi);
     process_set_reg_lo(process, reg_lo);
+    process_set_segment_offset(process, segment_offset);
 
     return process;
 }
@@ -5155,20 +5566,16 @@ int *process_get_registers(int *process) {
     return (int*)*(process + 2);
 }
 
-int *process_get_memory(int *process) {
-    return (int*)*(process + 3);
-}
-
 int process_get_reg_hi(int *process) {
-    return *(process + 4);
+    return *(process + 3);
 }
 
 int process_get_reg_lo(int *process) {
-    return *(process + 5);
+    return *(process + 4);
 }
 
-int process_get_segment_id(int *process) {
-    return *(process + 6);
+int process_get_segment_offset(int *process) {
+    return *(process + 5);
 }
 
 // Setters
@@ -5184,20 +5591,16 @@ void process_set_registers(int *process, int *registers) {
     *(process + 2) = (int)registers;
 }
 
-void process_set_memory(int *process, int *memory) {
-    *(process + 3) = (int)memory;
-}
-
 void process_set_reg_hi(int *process, int reg_hi) {
-    *(process + 4) = reg_hi;
+    *(process + 3) = reg_hi;
 }
 
 void process_set_reg_lo(int *process, int reg_lo) {
-    *(process + 5) = reg_lo;
+    *(process + 4) = reg_lo;
 }
 
-void process_set_segment_id(int *process, int segment_id) {
-    *(process + 6) = segment_id;
+void process_set_segment_offset(int *process, int segment_id) {
+    *(process + 5) = segment_id;
 }
 
 void print_process_list(int *list) {
@@ -5239,7 +5642,7 @@ void list_test() {
     println();
 
     list = list_init();
-    process = process_init(1, registers, memory, 0, 0);
+    process = process_init(1, registers, 0, 0, 0);
     
     print((int*) "push front 1");
     println();
@@ -5281,35 +5684,35 @@ void list_test() {
     println();
     print_process_list(list);
 
-    process = process_init(2, registers, memory, 0, 0);
+    process = process_init(2, registers, 0, 0, 0);
     
     print((int*) "push front 2");
     println();
     list_push_front(list, process);
     print_process_list(list);
 
-    process = process_init(3, registers, memory, 0, 0);
+    process = process_init(3, registers, 0, 0, 0);
     
     print((int*) "push back 3");
     println();
     list_push_back(list, process);
     print_process_list(list);
 
-    process = process_init(9, registers, memory, 0, 0);
+    process = process_init(9, registers, 0, 0, 0);
 
     print((int*) "push back 9");
     println();
     list_push_back(list, process);
     print_process_list(list);
 
-    process = process_init(4, registers, memory, 0, 0);
+    process = process_init(4, registers, 0, 0, 0);
     
     print((int*) "push front 4");
     println();
     list_push_front(list, process);
     print_process_list(list);
 
-    process = process_init(5, registers, memory, 0, 0);
+    process = process_init(5, registers, 0, 0, 0);
     
     print((int*) "push front 5");
     println();
@@ -5323,14 +5726,14 @@ void list_test() {
     println();
     print_process_list(list);
 
-    process = process_init(6, registers, memory, 0, 0);
+    process = process_init(6, registers, 0, 0, 0);
     
     print((int*) "insert 6 at 2");
     println();
     list_insert_at(list, 2, process);
     print_process_list(list);
 
-    process = process_init(7, registers, memory, 0, 0);
+    process = process_init(7, registers, 0, 0, 0);
     
     print((int*) "insert 7 at 0");
     println();
@@ -5342,7 +5745,7 @@ void list_test() {
     list_sort_by(list, 0);
     print_process_list(list);
 
-    process = process_init(8, registers, memory, 0, 0);
+    process = process_init(8, registers, 0, 0, 0);
     
     print((int*) "insert 8 at -1");
     println();
@@ -5457,9 +5860,13 @@ int selfie(int argc, int* argv) {
                 return 0;
             } else if (stringCompare((int*) *argv, (int*) "-k")) {
                 print(selfieName);
-                list_test();
                 print((int*) ": selfie -k size ... not yet implemented");
                 println();
+
+                argc = argc - 1;
+                argv = argv + 1;
+
+                kernel(argc, argv);
 
                 return 0;
             } else
@@ -5471,9 +5878,8 @@ int selfie(int argc, int* argv) {
 }
 
 int main(int argc, int *argv) {
-    // A2
-    g_segmentation_active = 0;
     DEBUG_1 = 0;
+    DEBUG_2 = 1;
 
     initLibrary();
     initScanner();
