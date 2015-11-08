@@ -440,6 +440,7 @@ void print_process_list(int *list);
 
 // KERNEL
 int  *g_readyqueue;
+int  *g_blockedqueue;
 int  g_running_process_id;
 
 // EMULATOR
@@ -4307,6 +4308,7 @@ void kernel(int argc, int* argv) {
 
 void kernel_init(int argc, int* argv) {
     g_readyqueue = list_init();
+    g_blockedqueue = list_init();
     g_running_process_id = 0;
 
     binaryName = (int*) *argv;
@@ -4317,11 +4319,9 @@ void kernel_init(int argc, int* argv) {
 }
 
 void kernel_run() {
-    int next_pid;
 
     while(1) {
-        next_pid = kernel_schedule_process();
-        kernel_switch_to_process(next_pid);
+        kernel_switch_to_process(kernel_schedule_process());
     }
 }
 
