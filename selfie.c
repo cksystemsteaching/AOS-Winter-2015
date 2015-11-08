@@ -333,14 +333,15 @@ void kernel_init(int argc, int* argv);
 void kernel_run();
 void kernel_load_executable(int pid, int segment_size, int *filename);
 int  kernel_schedule_process();
-void kernel_switch_process(int pid);
+void kernel_switch_to_process(int pid);
 
 // -----------------------------------------------------------------
 // ----------------------------- DEBUG -----------------------------
 // -----------------------------------------------------------------
 
-int DEBUG_1; // Debug first assignment
+int DEBUG_1;
 int DEBUG_2;
+int DEBUG_3;
 
 // -----------------------------------------------------------------
 // ----------------------------- STRUCT ----------------------------
@@ -421,7 +422,7 @@ int  *process_get_registers(int *process);
 int  *process_get_memory(int *process);
 int  process_get_reg_hi(int *process);
 int  process_get_reg_lo(int *process);
-int  process_get_segment_offset(int *process);
+int  process_get_segment_id(int *process);
 
 
 void process_set_id(int *process, int id);
@@ -430,7 +431,7 @@ void process_set_registers(int *process, int *registers);
 void process_set_memory(int *process, int *memory);
 void process_set_reg_hi(int *process, int reg_hi);
 void process_set_reg_lo(int *process, int reg_lo);
-void process_set_segment_offset(int *process, int segment_id);
+void process_set_segment_id(int *process, int segment_id);
 
 void print_process_list(int *list);
 
@@ -439,6 +440,7 @@ void print_process_list(int *list);
 
 // KERNEL
 int  *g_readyqueue;
+int  *g_blockedqueue;
 int  g_running_process_id;
 
 // EMULATOR
@@ -832,11 +834,21 @@ void syscall_sched_yield();
 // -------------------------- ASSIGNMENT3 --------------------------
 // -----------------------------------------------------------------
 
-void emitSchedSetParam();
-void syscall_sched_setparam();
+void emitAlarm();
+void syscall_alarm();
 
 void emitSelect();
 void syscall_select();
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT4 --------------------------
+// -----------------------------------------------------------------
+
+void emitMlock();
+void syscall_mlock();
+
+void emitMunlock();
+void syscall_munlock();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
@@ -848,8 +860,12 @@ int SYSCALL_MALLOC  = 5001;
 int SYSCALL_GETCHAR = 5002;
 // A2
 int SYSCALL_SCHED_YIELD = 5003;
-int SYSCALL_SCHED_SETPARAM = 5004;
+// A3
+int SYSCALL_ALARM = 5004;
 int SYSCALL_SELECT = 5005;
+// A4
+int SYSCALL_MLOCK = 5006;
+int SYSCALL_MUNLOCK = 5007;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -3337,8 +3353,11 @@ void compile() {
     // A2
     emitSchedYield();
     // A3
-    emitSchedSetParam();
+    emitAlarm();
     emitSelect();
+    // A4
+    emitMlock();
+    emitMunlock();
 
     // parser
     gr_cstar();
@@ -3993,25 +4012,27 @@ void emitSchedYield() {
 }
 
 void syscall_sched_yield() {
-    trap_to_kernel();
+    if(DEBUG_2) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
+        print((int*) "Call sched_yield");
+        println();
+    }
 
-    print((int*) "///////////////////////////////////////////////");
-    println();
-    print((int*) "Call sched_yield");
-    println();
+    trap_to_kernel();
 }
 
 // -----------------------------------------------------------------
 // -------------------------- ASSIGNMENT3 --------------------------
 // -----------------------------------------------------------------
 
-// PID 
-void emitSchedSetParam() {
+// PID / Segment Size / Filename
+void emitAlarm() {
     // Create the symbol table entry fpr sched_yield
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "alarm", binaryLength, FUNCTION, INT_T, 0);
 
     emitIFormat(OP_LW, REG_SP, REG_A2, 0);
-    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // File name
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // Filename
 
     emitIFormat(OP_LW, REG_SP, REG_A1, 0);
     emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // Segment Size
@@ -4019,7 +4040,7 @@ void emitSchedSetParam() {
     emitIFormat(OP_LW, REG_SP, REG_A0, 0);
     emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // Process ID
 
-    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SCHED_SETPARAM);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_ALARM);
     emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
 
     // We don't have a return value so we just jump back
@@ -4027,7 +4048,7 @@ void emitSchedSetParam() {
 }
 
 // Loads the file from FILNAME onto memory and allocates a segment
-void syscall_sched_setparam() {
+void syscall_alarm() {
     int pid;
     int segment_size;
     int vaddr;
@@ -4074,41 +4095,99 @@ void syscall_select() {
     int prev_pid;
     int next_pid;
 
-    int *prev_entry;
-    int *next_entry;
-
     int *prev_process;
     int *next_process;
 
     prev_pid = *(registers + REG_A0);
     next_pid = *(registers + REG_A1);
 
-    print((int*) "///////////////////////////////////////////////");
-    println();
+    if(DEBUG_2) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
 
-    print((int*)"System call select");
-    println();
+        print((int*)"System call select");
+        println();
 
-    print((int*)"Previous process id: ");
-    printInt(prev_pid);
-    println();
+        print((int*)"Previous process id: ");
+        printInt(prev_pid);
+        println();
 
-    print((int*)"Next process id: ");
-    printInt(next_pid);
-    println();
+        print((int*)"Next process id: ");
+        printInt(next_pid);
+        println();
 
-    print_process_list(g_process_table);
+        print_process_list(g_process_table);
+    }
 
-    prev_entry = list_find_entry_by(g_process_table, prev_pid, 0);
-    next_entry = list_find_entry_by(g_process_table, next_pid, 0);
-
-    prev_process = list_entry_get_data(prev_entry);
-    next_process = list_entry_get_data(next_entry);
+    prev_process = list_entry_get_data(list_find_entry_by(g_process_table, prev_pid, 0));
+    next_process = list_entry_get_data(list_find_entry_by(g_process_table, next_pid, 0));
 
     process_save(prev_process);
     process_restore(next_process);
     g_running_process = next_process;
+    // We loaded a user process so we turn on interrupts again
+    g_interrupts_active = 1;
 }
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT4 --------------------------
+// -----------------------------------------------------------------
+
+void emitMlock() {
+    // Create the symbol table entry fpr sched_yield
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "mlock", binaryLength, FUNCTION, INT_T, 0);
+
+    // sched_yield doesn't have any arguments
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_MLOCK);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+void syscall_mlock() {
+    if(DEBUG_3) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*)"System call m_lock");
+        println();
+    }
+}
+
+void emitMunlock() {
+    // Create the symbol table entry fpr sched_yield
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "munlock", binaryLength, FUNCTION, INT_T, 0);
+
+    // sched_yield doesn't have any arguments
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_MUNLOCK);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+void syscall_munlock() {
+    if(DEBUG_3) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*)"System call m_unlock");
+        println();
+    }
+}
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT3 --------------------------
+// -----------------------------------------------------------------
 
 void process_save(int *process) {
     int i;
@@ -4169,7 +4248,7 @@ void process_restore(int *process) {
     registers = process_get_registers(process);
     reg_hi = process_get_reg_hi(process);
     reg_lo = process_get_reg_lo(process);
-    g_segment_offset = process_get_segment_offset(process);
+    g_segment_offset = segment_get_start(struct_get_element_at(g_segment_table, process_get_segment_id(process)));
 
     if(DEBUG_2) {
         print((int*) "id: ");
@@ -4229,21 +4308,20 @@ void kernel(int argc, int* argv) {
 
 void kernel_init(int argc, int* argv) {
     g_readyqueue = list_init();
+    g_blockedqueue = list_init();
     g_running_process_id = 0;
 
     binaryName = (int*) *argv;
-    kernel_load_executable(1, 4*1024 * 1024, binaryName);
-    kernel_load_executable(2, 4*1024 * 1024, binaryName);
-    kernel_load_executable(3, 1*1024 * 1024, binaryName);
-    kernel_load_executable(4, 3*1024 * 1024, binaryName);
+    kernel_load_executable(1, 4 * 1024 * 1024, binaryName);
+    kernel_load_executable(2, 4 * 1024 * 1024, binaryName);
+    kernel_load_executable(3, 1 * 1024 * 1024, binaryName);
+    kernel_load_executable(4, 3 * 1024 * 1024, binaryName);
 }
 
 void kernel_run() {
-    int next_pid;
 
     while(1) {
-        next_pid = kernel_schedule_process();
-        kernel_switch_process(next_pid);
+        kernel_switch_to_process(kernel_schedule_process());
     }
 }
 
@@ -4257,7 +4335,7 @@ int kernel_schedule_process() {
     return (int) list_entry_get_data(list_pop_front(g_readyqueue));
 }
 
-void kernel_switch_process(int pid) {
+void kernel_switch_to_process(int pid) {
     if(g_running_process_id > 0)
         list_push_back(g_readyqueue, (int*) g_running_process_id);
     
@@ -4319,16 +4397,22 @@ void fct_syscall() {
     } else if (*(registers+REG_V0) == SYSCALL_MALLOC) {
         syscall_malloc();
         pc = pc + 4;
-        // A2-A3
+    // Additional System Calls
     } else if (*(registers+REG_V0) == SYSCALL_SCHED_YIELD) {
         pc = pc + 4;
         syscall_sched_yield();
-    } else if (*(registers+REG_V0) == SYSCALL_SCHED_SETPARAM) {
-        syscall_sched_setparam();
+    } else if (*(registers+REG_V0) == SYSCALL_ALARM) {
+        syscall_alarm();
         pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_SELECT) {
         pc = pc + 4;
         syscall_select();
+    } else if (*(registers+REG_V0) == SYSCALL_MLOCK) {
+        syscall_mlock();
+        pc = pc + 4;
+    } else if (*(registers+REG_V0) == SYSCALL_MUNLOCK) {
+        syscall_munlock();
+        pc = pc + 4;
     } else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
     }
@@ -4743,7 +4827,6 @@ void execute() {
 }
 
 void run() {
-    //int *process;
 
     while (1) {
         fetch();
@@ -4751,15 +4834,13 @@ void run() {
         pre_debug();
         execute();
         post_debug();
-
-        // A1: Every process is allowed to run TIME_SLICE many ticks
         
-        // g_ticks = g_ticks + 1;
-        // if(g_ticks == TIME_SLICE) {
-        //     process = process_schedule();
-        //     process_switch(process);
-        //     g_ticks = 0;
-        // } 
+        if(g_interrupts_active)
+            g_ticks = g_ticks + 1;
+        if(g_ticks == TIME_SLICE) {
+            trap_to_kernel();
+            g_ticks = 0;
+        } 
     }
 }
 
@@ -4879,9 +4960,14 @@ void emulate(int argc, int *argv) {
     run();
 }
 
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT3 --------------------------
+// -----------------------------------------------------------------
+
 int *process_init_segment(int pid, int segment_size) {
     int *process;
     int *new_registers;
+    int *segment;
     int i;
 
     new_registers =  malloc(32 * 4);
@@ -4889,13 +4975,16 @@ int *process_init_segment(int pid, int segment_size) {
     *(new_registers+REG_GP) = binaryLength;
     *(new_registers+REG_K1) = *(new_registers+REG_GP);
 
+    segment = segment_init(g_next_segment, segment_size);
+    struct_set_element_at(g_segment_table, g_segment_counter, segment);
+
     process = process_allocate();
     process_set_id(process, pid);
     process_set_pc(process, 0);
     process_set_registers(process, new_registers);
     process_set_reg_hi(process, 0);
     process_set_reg_lo(process, 0);
-    process_set_segment_offset(process, g_next_segment);
+    process_set_segment_id(process, g_segment_counter);
     list_push_back(g_process_table, process);
 
     g_segment_counter = g_segment_counter + 1;
@@ -4908,12 +4997,24 @@ int *process_init_segment(int pid, int segment_size) {
         print((int*) "Allocating a new segment");
         println();
 
+        print((int*) "Segment ID: ");
+        printInt(process_get_segment_id(process));
+        println();
+
+        print((int*) "Segment start: ");
+        printInt(segment_get_start(segment));
+        println();
+
+        print((int*) "Segment size: ");
+        printInt(segment_get_size(segment));
+        println();
+
         print((int*) "PID: ");
         printInt(pid);
         println();
 
         print((int*) "Segment offset: ");
-        printInt(process_get_segment_offset(process));
+        printInt(process_get_segment_id(process));
         println();
 
         print((int*) "Segment size: ");
@@ -4952,54 +5053,16 @@ int *process_init_segment(int pid, int segment_size) {
     return process;
 }
 
-// -----------------------------------------------------------------
-// -------------------------- ASSIGNMENT3 --------------------------
-// -----------------------------------------------------------------
-
 void trap_to_kernel() {
     process_save(g_running_process);
     process_restore(g_kernel_process);
+    // Kernel mustn't be interrupted
+    g_interrupts_active = 0;
 }
 
 // -----------------------------------------------------------------
 // -------------------------- ASSIGNMENT2 --------------------------
 // -----------------------------------------------------------------
-
-//void process_get_segment(int *process, int segment_size, int argc, int *argv) {
-    // int *segment;
-    // int *new_registers;
-
-    // // Insert the newly allocated segment into the segment table
-    // segment = segment_init(g_segment_offset, segment_size);
-    // struct_set_element_at(g_segment_table, g_segment_counter, segment);
-    // // The process only remembers his segment id
-    // process_set_segment_offset(process, g_segment_counter);
-    // // We just added a segment -> increase the segment counter
-    // g_segment_counter = g_segment_counter + 1;
-    // g_segment_offset = g_segment_offset + segment_size;
-
-    // g_running_process = process;
-
-    // copyBinaryToMemory();
-
-    // resetInterpreter();
-
-    // *(registers+REG_SP) = segment_size;
-    // *(registers+REG_GP) = binaryLength;
-    // *(registers+REG_K1) = *(registers+REG_GP);
-
-    // // Each process has it's own registers
-    // new_registers = memcpy(registers, 32);
-    // // Required otherwise UP_COPYARGUMENTS wouldn't work
-    // registers = new_registers;
-    // process_set_registers(process, new_registers);
-    // // Initialize the rest of the fields
-    // process_set_pc(process, 0);
-    // process_set_reg_hi(process, reg_hi);
-    // process_set_reg_lo(process, reg_lo);
-
-    // up_copyArguments(argc, argv);
-//}
 
 void init_segmentation() {
     g_process_table = list_init();
@@ -5010,97 +5073,12 @@ void init_segmentation() {
 
     g_ticks = 0;
     g_interrupts_active = 0;
-    TIME_SLICE = 2;
+    TIME_SLICE = 53;
 }
 
 // -----------------------------------------------------------------
 // -------------------------- ASSIGNMENT1 --------------------------
 // -----------------------------------------------------------------
-
-//void init_readyqueue(int argc, int *argv) {
-    // int i;
-    // int *process;
-
-    // g_ticks = 0;
-    // g_readyqueue = list_init();
-    
-    // TIME_SLICE = 10;
-    // NUMBER_OF_INSTANCES = 32;
-
-    // i = 0;
-    // while(i < NUMBER_OF_INSTANCES) {
-    //     if(i == NUMBER_OF_INSTANCES - 1) {
-    //         g_running_process = process_allocate();
-    //         process_set_id(g_running_process, i);
-    //         process_get_segment(g_running_process, 1024 * 1024, argc, argv);
-    //     } else {
-    //         process = process_allocate();
-    //         process_set_id(process, i);
-    //         process_get_segment(process, 1024 * 1024, argc, argv);
-    //         list_push_back(g_readyqueue, process);
-    //     }
-    //     i = i + 1;
-    // }
-//}
-
-// Returns the next process to run
-//int *process_schedule() {
-    // int *process;
-    
-    // if(list_is_empty(g_readyqueue))
-    //     return g_running_process;
-
-    // process = list_entry_get_data(list_pop_front(g_readyqueue));
-
-    // return process;
-//}
-
-// Switches to PROCESS
-//void process_switch(int *process) {
-
-    // if(process == g_running_process)
-    //     return;
-
-    // // Save the state of the current process
-    // process_set_pc(g_running_process, pc);
-    // process_set_registers(g_running_process, registers);
-    // //process_set_memory(g_running_process, memory);
-    // process_set_reg_hi(g_running_process, reg_hi);
-    // process_set_reg_lo(g_running_process, reg_lo);
-
-    // list_push_back(g_readyqueue, g_running_process);
-
-    // // Switch to PROCESS
-    // pc = process_get_pc(process);
-    // registers = process_get_registers(process);
-    // //memory = process_get_memory(process);
-    // reg_hi = process_get_reg_hi(process);
-    // reg_lo = process_get_reg_lo(process);
-
-    // // We get a new running process
-    // g_running_process = process;
-
-    // if(DEBUG_1) {
-    //     print((int*)"switch to process ");
-    //     printInt(process_get_id(process));
-    //     println();
-    // }
-//}
-
-// NUM ... Number of bytes
-//int *memcpy(int *source, int num) {
-    // int i;
-    // int *dest;
-
-    // i = 0;
-    // dest = (int*)malloc(num * 4);
-    // while(i < num) {
-    //     *(dest + i) = *(source + i);
-    //     i = i + 1;
-    // }
-
-    // return dest;
-//}
 
 void printInt(int i) {
     print(itoa(i, string_buffer, 10, 0));
@@ -5529,7 +5507,7 @@ int  *process_allocate() {
 }
 
 // TODO: Change memory to segment
-int *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_offset) {
+int *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_id) {
     int *process;
 
     // process:
@@ -5548,7 +5526,7 @@ int *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_of
     process_set_registers(process, registers);
     process_set_reg_hi(process, reg_hi);
     process_set_reg_lo(process, reg_lo);
-    process_set_segment_offset(process, segment_offset);
+    process_set_segment_id(process, segment_id);
 
     return process;
 }
@@ -5574,7 +5552,7 @@ int process_get_reg_lo(int *process) {
     return *(process + 4);
 }
 
-int process_get_segment_offset(int *process) {
+int process_get_segment_id(int *process) {
     return *(process + 5);
 }
 
@@ -5599,7 +5577,7 @@ void process_set_reg_lo(int *process, int reg_lo) {
     *(process + 4) = reg_lo;
 }
 
-void process_set_segment_offset(int *process, int segment_id) {
+void process_set_segment_id(int *process, int segment_id) {
     *(process + 5) = segment_id;
 }
 
@@ -5879,7 +5857,8 @@ int selfie(int argc, int* argv) {
 
 int main(int argc, int *argv) {
     DEBUG_1 = 0;
-    DEBUG_2 = 1;
+    DEBUG_2 = 0;
+    DEBUG_3 = 0;
 
     initLibrary();
     initScanner();
