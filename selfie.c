@@ -301,11 +301,7 @@ void resetScanner() {
 // -----------------------------------------------------------------
 
 // NUM ... Number of bytes, returns destination
-//int  *memcpy(int *source, int num);
 void printInt(int i);
-//void init_readyqueue(int argc, int *argv);
-//int  *process_schedule();
-//void process_switch(int *process);
 
 // -----------------------------------------------------------------
 // -------------------------- ASSIGNMENT2 --------------------------
@@ -332,8 +328,8 @@ void kernel(int argc, int* argv);
 void kernel_init(int argc, int* argv);
 void kernel_run();
 void kernel_load_executable(int pid, int segment_size, int *filename);
-int  kernel_schedule_process();
-void kernel_switch_to_process(int pid);
+int  *kernel_schedule_process();
+void kernel_switch_to_process(int *process);
 
 // -----------------------------------------------------------------
 // ----------------------------- DEBUG -----------------------------
@@ -342,6 +338,22 @@ void kernel_switch_to_process(int pid);
 int DEBUG_1;
 int DEBUG_2;
 int DEBUG_3;
+
+// -----------------------------------------------------------------
+// ----------------------------- LOCK ------------------------------
+// -----------------------------------------------------------------
+
+int *lock_init();
+int  lock_is_taken();
+
+int *lock_get_process(int *lock);
+int *lock_get_blockedqueue(int *lock);
+
+void lock_set_process(int *lock, int *process);
+void lock_set_blockedqueue(int *lock, int *blockedqueue);
+
+void lock_blockqueue_push(int *lock, int *process);
+int  *lock_blockqueue_pop(int *lock);
 
 // -----------------------------------------------------------------
 // ----------------------------- STRUCT ----------------------------
@@ -440,8 +452,7 @@ void print_process_list(int *list);
 
 // KERNEL
 int  *g_readyqueue;
-int  *g_blockedqueue;
-int  g_running_process_id;
+int  *g_lock;
 
 // EMULATOR
 int  *g_running_process;
@@ -454,10 +465,17 @@ int  g_segmentation_active;
 int  g_next_segment;
 int  g_ticks;
 int  g_interrupts_active;
+int  g_kernel_action;
 
+// Constants
 int  NUMBER_OF_INSTANCES;
 int  TIME_SLICE;
 int  MEMORY_SIZE;
+
+// Kernel Modes
+int KERNEL_SCHEDULE = 0;
+int KERNEL_LOCK = 1;
+int KERNEL_UNLOCK = 2;
 
 // -----------------------------------------------------------------
 // ------------------------- SYMBOL TABLE --------------------------
@@ -850,6 +868,12 @@ void syscall_mlock();
 void emitMunlock();
 void syscall_munlock();
 
+void emitGetpid();
+void syscall_getpid();
+
+void emitSignal();
+void syscall_signal();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int SYSCALL_EXIT    = 4001;
@@ -866,6 +890,8 @@ int SYSCALL_SELECT = 5005;
 // A4
 int SYSCALL_MLOCK = 5006;
 int SYSCALL_MUNLOCK = 5007;
+int SYSCALL_GETPID = 5008;
+int SYSCALL_SIGNAL = 5009;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -3358,6 +3384,8 @@ void compile() {
     // A4
     emitMlock();
     emitMunlock();
+    emitGetpid();
+    emitSignal();
 
     // parser
     gr_cstar();
@@ -4019,6 +4047,7 @@ void syscall_sched_yield() {
         println();
     }
 
+    g_kernel_action = KERNEL_SCHEDULE;
     trap_to_kernel();
 }
 
@@ -4124,7 +4153,6 @@ void syscall_select() {
 
     process_save(prev_process);
     process_restore(next_process);
-    g_running_process = next_process;
     // We loaded a user process so we turn on interrupts again
     g_interrupts_active = 1;
 }
@@ -4154,7 +4182,7 @@ void syscall_mlock() {
         print((int*) "///////////////////////////////////////////////");
         println();
 
-        print((int*)"System call m_lock");
+        print((int*)"System call mlock");
         println();
     }
 }
@@ -4180,10 +4208,73 @@ void syscall_munlock() {
         print((int*) "///////////////////////////////////////////////");
         println();
 
-        print((int*)"System call m_unlock");
+        print((int*)"System call munlock");
         println();
     }
 }
+
+void emitGetpid() {
+    // Create the symbol table entry fpr sched_yield
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "getpid", binaryLength, FUNCTION, INT_T, 0);
+
+    // sched_yield doesn't have any arguments
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_GETPID);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+void syscall_getpid() {
+    int pid;
+
+    pid = process_get_id(g_running_process);
+
+    *(registers+REG_V0) = pid;
+    
+    if(DEBUG_3) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*)"System call getpid");
+        println();
+    }
+}
+
+// Returns the current kernel mode
+void emitSignal() {
+    // Create the symbol table entry fpr sched_yield
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "signal", binaryLength, FUNCTION, INT_T, 0);
+
+    // sched_yield doesn't have any arguments
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SIGNAL);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+void syscall_signal() {
+
+    *(registers+REG_V0) = g_kernel_action;
+
+    if(DEBUG_3) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*)"System call signal");
+        println();
+    }
+}
+
 
 // -----------------------------------------------------------------
 // -------------------------- ASSIGNMENT3 --------------------------
@@ -4249,6 +4340,7 @@ void process_restore(int *process) {
     reg_hi = process_get_reg_hi(process);
     reg_lo = process_get_reg_lo(process);
     g_segment_offset = segment_get_start(struct_get_element_at(g_segment_table, process_get_segment_id(process)));
+    g_running_process = process;
 
     if(DEBUG_2) {
         print((int*) "id: ");
@@ -4272,7 +4364,7 @@ void process_restore(int *process) {
         println();
 
         print((int*) "Register Address: ");
-        printInt(registers);
+        printInt((int) registers);
         println();
 
         print((int*) "Registers: ");
@@ -4308,8 +4400,8 @@ void kernel(int argc, int* argv) {
 
 void kernel_init(int argc, int* argv) {
     g_readyqueue = list_init();
-    g_blockedqueue = list_init();
-    g_running_process_id = 0;
+    g_lock = lock_init();
+    g_running_process = (int*) 0;
 
     binaryName = (int*) *argv;
     kernel_load_executable(1, 4 * 1024 * 1024, binaryName);
@@ -4319,28 +4411,90 @@ void kernel_init(int argc, int* argv) {
 }
 
 void kernel_run() {
+    int action;
 
     while(1) {
-        kernel_switch_to_process(kernel_schedule_process());
+        action = signal();
+
+        if(action == KERNEL_SCHEDULE) {
+            kernel_switch_to_process(kernel_schedule_process());
+        } else if(action == KERNEL_LOCK) {
+            
+        } else if(action == KERNEL_UNLOCK) {
+            
+        }
     }
 }
 
 void kernel_load_executable(int pid, int segment_size, int *filename) {
-    // The ready queue only stored PIDs!
-    list_push_back(g_readyqueue, (int*) pid);
+    int *process;
+
+    process = process_allocate();
+    process_set_id(process, pid);
+
+    list_push_back(g_readyqueue, process);
     alarm(pid, segment_size, filename);
 }
 
-int kernel_schedule_process() {
-    return (int) list_entry_get_data(list_pop_front(g_readyqueue));
+int *kernel_schedule_process() {
+    return list_entry_get_data(list_pop_front(g_readyqueue));
 }
 
-void kernel_switch_to_process(int pid) {
-    if(g_running_process_id > 0)
-        list_push_back(g_readyqueue, (int*) g_running_process_id);
+void kernel_switch_to_process(int *process) {
+
+    if(process_get_id(g_running_process) > 0)
+        list_push_back(g_readyqueue, g_running_process);
     
-    g_running_process_id = pid;
-    select(0, pid);
+    g_running_process = process;
+    select(0, process_get_id(process));
+}
+
+// -----------------------------------------------------------------
+// ----------------------------- LOCK ------------------------------
+// -----------------------------------------------------------------
+
+int *lock_init() {
+    int *lock;
+
+    // lock:
+    // +----+---------------------+
+    // |  0 | ptr to process      |
+    // |  1 | ptr to blockedqueue |
+    // +----+---------------------+
+
+    lock = malloc(2 * 4);
+    lock_set_process(lock, (int*)0);
+    lock_set_blockedqueue(lock, list_init());
+}
+
+int lock_is_taken(int *lock) {
+    return *lock != 0;
+}
+
+// Getters
+int *lock_get_process(int *lock) {
+    return (int*)*lock;
+}
+
+int *lock_get_blockedqueue(int *lock) {
+    return (int*)*(lock + 1);
+}
+
+// Setters
+void lock_set_process(int *lock, int *process) {
+    *lock = (int)process;
+}
+
+void lock_set_blockedqueue(int *lock, int *blockedqueue) {
+    *(lock + 1) = (int)blockedqueue;
+}
+
+void lock_blockqueue_push(int *lock, int *process) {
+    list_push_back(lock_get_blockedqueue(lock), process);
+}
+
+int *lock_blockqueue_pop(int *lock) {
+    return list_pop_front(lock_get_blockedqueue(lock));
 }
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -4412,6 +4566,12 @@ void fct_syscall() {
         pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_MUNLOCK) {
         syscall_munlock();
+        pc = pc + 4;
+    } else if (*(registers+REG_V0) == SYSCALL_GETPID) {
+        syscall_getpid();
+        pc = pc + 4;
+    } else if (*(registers+REG_V0) == SYSCALL_SIGNAL) {
+        syscall_signal();
         pc = pc + 4;
     } else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
@@ -4838,6 +4998,7 @@ void run() {
         if(g_interrupts_active)
             g_ticks = g_ticks + 1;
         if(g_ticks == TIME_SLICE) {
+            g_kernel_action = KERNEL_SCHEDULE;
             trap_to_kernel();
             g_ticks = 0;
         } 
@@ -4942,11 +5103,13 @@ void emulate(int argc, int *argv) {
 
     resetInterpreter();
 
-    print((int*) "///////////////////////////////////////////////");
-    println();
+    if(DEBUG_3) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
 
-    print((int*)"Loading the kernel process!");
-    println();
+        print((int*)"Loading the kernel process!");
+        println();
+    }
 
     *(registers+REG_SP) = segment_size - 4; // The kernel gets 2 MB of memory
     *(registers+REG_GP) = binaryLength;
@@ -5037,7 +5200,7 @@ int *process_init_segment(int pid, int segment_size) {
         print_process_list(g_process_table);
 
         print((int*) "Register Address: ");
-        printInt(process_get_registers(process));
+        printInt((int) process_get_registers(process));
         println();
 
         print((int*) "Registers: ");
@@ -5074,6 +5237,8 @@ void init_segmentation() {
     g_ticks = 0;
     g_interrupts_active = 0;
     TIME_SLICE = 53;
+
+    g_kernel_action = KERNEL_SCHEDULE; // TODO: 
 }
 
 // -----------------------------------------------------------------
