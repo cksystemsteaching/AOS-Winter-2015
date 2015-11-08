@@ -847,6 +847,7 @@ void saveKernelState(int pc, int *reg, int reg_hi, int reg_lo, int segstart,int 
 void restoreKernelState();
 int tlb_debug = 0;
 void loadProcess(int * name, int id);
+
 // ------------------------- INITIALIZATION ------------------------
 
 void initInterpreter() {
@@ -3350,6 +3351,7 @@ int tlb(int vaddr) {
 }
 
 int loadMemory(int vaddr) {
+    
     return *(memory + tlb(vaddr));
 }
 
@@ -3811,14 +3813,14 @@ void emitSwitch(){
 
 void syscall_switch(){
     
-    print("switching");
-    println();
-    
     saveKernelState(pc,registers,reg_hi,reg_lo,segmentStart,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1));
-    if(*(memory+segSize+12) == 0)
-        registers = malloc(32);
-    else
+    
+    if(*(memory+segSize+12) == 0){
+        registers = malloc(32*4);
+    }
+    else{
         registers           =   *(memory+segSize+12);
+    }
 
     
     pc                  =   *(memory+segSize+11);
@@ -3829,7 +3831,7 @@ void syscall_switch(){
     *(registers+REG_GP) =   *(memory+segSize+17);
     *(registers+REG_SP) =   *(memory+segSize+18);
     *(registers+REG_K1) =   *(memory+segSize+19);
-
+    
     *(memory+segSize+10) = 0; //exit
 
     
@@ -3901,8 +3903,7 @@ void syscall_yield(){
 
 
 void saveKernelState(int pc, int *reg, int reg_hi, int reg_lo, int segStart,int gp,int sp, int k1){
-    int pa;
-    pa = 0;
+    
     *(memory+segSize) = pc;
     *(memory + segSize+1) = reg;
     *(memory + segSize+2) = reg_hi;
@@ -3915,9 +3916,7 @@ void saveKernelState(int pc, int *reg, int reg_hi, int reg_lo, int segStart,int 
 }
 
 void restoreKernelState(){
-    int pa;
-    pa = 0;
-    
+     process =0;
     pc                  = *(memory + segSize);
     registers           = *(memory + segSize + 1);
     reg_hi              = *(memory + segSize + 2);
@@ -3926,8 +3925,7 @@ void restoreKernelState(){
     *(registers+REG_GP) = *(memory + segSize + 5);
     *(registers+REG_SP) = *(memory + segSize + 6);
     *(registers+REG_K1) = *(memory + segSize + 7);
-    process =0;
-    pc = pc+4;
+   
 }
 
 
@@ -3943,34 +3941,37 @@ void restoreKernelState(){
 int main_os(){
     int *program;
     int *segment;
-    int i;
-    int *j;
     int *secondSegmentStart;
-    secondSegmentStart = secondSegmentStart+  2097152;
     
-    
+    secondSegmentStart =  2097152*4;
     segSize = 2097152;
     segmentStart = 2097152*2;
-    segPointer =2097152*2;
+
+    
+    segPointer =segmentStart;
     memory = 0;
-    j = 2097152;
     initInterpreter();
-
     readyqueue = 0;
-
     loadProcess("test.mips",2);
     segmentStart = segmentStart + segSize;
-
+    loadProcess("test.mips",3);
+    
+    //BUG becasue it is actually saving kernel process and user process in 4th segment it has to be skipped
+    segmentStart = segmentStart + segSize+segSize;// + segSize;
+    segPointer = segPointer + segSize;
+    
+    loadProcess("test.mips",4);
+    segmentStart = segmentStart + segSize;
+    loadProcess("test.mips",5);
+    
     
     while(1){
         print("ENTERING KERNEL ");
         println();
-
+        
         process = pop(readyqueue);
         segment = getProcessSegPointer(process);
-
-        println();
-       
+        
         *(secondSegmentStart+11) = getProcessPc(process);
         *(secondSegmentStart+12) = getProcessRegisters(process);
         *(secondSegmentStart+13) = getProcessRegHi(process);
@@ -3980,16 +3981,18 @@ int main_os(){
         *(secondSegmentStart+17) = getProcessGlobalP(process);
         *(secondSegmentStart+18) = getProcessStackP(process);
         *(secondSegmentStart+19) = getProcessK1(process);
-
-   
+        
         
         *(secondSegmentStart+10) = 1; //switch
-        
+        println();
+        println();
+
+    
+        *(secondSegmentStart+11) = *(secondSegmentStart+11)+4;//increment pc otherwise it always return to the same instruction s
         push(memory,*(secondSegmentStart+12),*(secondSegmentStart+13),*(secondSegmentStart+14),*(secondSegmentStart+11),getProcessId(process),segment,*(secondSegmentStart+17),*(secondSegmentStart+18),*(secondSegmentStart+19),readyqueue);
     }
     
-    
-    exit(0);
+   exit(0);
 }
 
 void loadProcess(int * name, int id){
@@ -4576,12 +4579,12 @@ int getProcessTableSp(int *processEntry){
 
 
 int main_emulator(int argc, int *argv) {
-    
     int*segment;
+    int i;
     
     initInterpreter();
     
-    initMemory(32 * 1024 * 1024,"selfie.mips");
+    initMemory(64 * 1024 * 1024,"selfie.mips");
     binaryLength = 0;
     loadBinary();
     
@@ -4591,11 +4594,14 @@ int main_emulator(int argc, int *argv) {
     
     //initialize SP for the firs segment!
     *(registers+REG_SP) = segSize - 4;
-
+    
     run();
+  
     exit(0);
 
 }
+
+
 // ----------------------------------------------------------------
 // ---------------------ASSIGNMENT 1,2 ------------------------------
 // ----------------------------------------------------------------
@@ -4653,7 +4659,9 @@ void createProcess(int *head, int pId){
 
 
         newRegisters = (int*)malloc(32*4);
-        memCopy(memory+(segSize*2)/4,memory+getSegmentStart(segment)/4,segSize/4);
+        memCopy(memory,memory+getSegmentStart(segment)/4,segSize/4);
+
+        //memCopy(memory+(segSize*2)/4,memory+getSegmentStart(segment)/4,segSize/4);
         memCopy(registers,newRegisters,32);
         
     
