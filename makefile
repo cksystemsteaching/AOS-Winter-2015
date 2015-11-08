@@ -14,5 +14,6 @@ compile:
 	./selfie -c < selfie.c
 	-mv out selfie.mips
 
+
 run: 
 	./selfie -m 32 test.mips
