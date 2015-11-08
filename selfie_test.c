@@ -5518,6 +5518,8 @@ void list_test() {
     println();
     list_push_front(list, process);
     print_process_list(list);
+
+    mlock();
     
     print((int*) "pop front ");
     data = list_entry_get_data(list_pop_front(list));
@@ -5649,6 +5651,8 @@ void list_test() {
     printInt(id);
     println();
     print_process_list(list);
+
+    munlock();
 
     print((int*) "remove at 1 -> ");
     data = list_entry_get_data(list_remove_at(list, 1));

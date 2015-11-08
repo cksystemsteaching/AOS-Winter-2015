@@ -333,14 +333,15 @@ void kernel_init(int argc, int* argv);
 void kernel_run();
 void kernel_load_executable(int pid, int segment_size, int *filename);
 int  kernel_schedule_process();
-void kernel_switch_process(int pid);
+void kernel_switch_to_process(int pid);
 
 // -----------------------------------------------------------------
 // ----------------------------- DEBUG -----------------------------
 // -----------------------------------------------------------------
 
-int DEBUG_1; // Debug first assignment
+int DEBUG_1;
 int DEBUG_2;
+int DEBUG_3;
 
 // -----------------------------------------------------------------
 // ----------------------------- STRUCT ----------------------------
@@ -838,6 +839,16 @@ void syscall_alarm();
 void emitSelect();
 void syscall_select();
 
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT4 --------------------------
+// -----------------------------------------------------------------
+
+void emitMlock();
+void syscall_mlock();
+
+void emitMunlock();
+void syscall_munlock();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int SYSCALL_EXIT    = 4001;
@@ -848,8 +859,12 @@ int SYSCALL_MALLOC  = 5001;
 int SYSCALL_GETCHAR = 5002;
 // A2
 int SYSCALL_SCHED_YIELD = 5003;
+// A3
 int SYSCALL_ALARM = 5004;
 int SYSCALL_SELECT = 5005;
+// A4
+int SYSCALL_MLOCK = 5006;
+int SYSCALL_MUNLOCK = 5007;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -3339,6 +3354,9 @@ void compile() {
     // A3
     emitAlarm();
     emitSelect();
+    // A4
+    emitMlock();
+    emitMunlock();
 
     // parser
     gr_cstar();
@@ -4007,13 +4025,13 @@ void syscall_sched_yield() {
 // -------------------------- ASSIGNMENT3 --------------------------
 // -----------------------------------------------------------------
 
-// PID 
+// PID / Segment Size / Filename
 void emitAlarm() {
     // Create the symbol table entry fpr sched_yield
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "alarm", binaryLength, FUNCTION, INT_T, 0);
 
     emitIFormat(OP_LW, REG_SP, REG_A2, 0);
-    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // File name
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // Filename
 
     emitIFormat(OP_LW, REG_SP, REG_A1, 0);
     emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // Segment Size
@@ -4109,6 +4127,66 @@ void syscall_select() {
     // We loaded a user process so we turn on interrupts again
     g_interrupts_active = 1;
 }
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT4 --------------------------
+// -----------------------------------------------------------------
+
+void emitMlock() {
+    // Create the symbol table entry fpr sched_yield
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "mlock", binaryLength, FUNCTION, INT_T, 0);
+
+    // sched_yield doesn't have any arguments
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_MLOCK);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+void syscall_mlock() {
+    if(DEBUG_3) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*)"System call m_lock");
+        println();
+    }
+}
+
+void emitMunlock() {
+    // Create the symbol table entry fpr sched_yield
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "munlock", binaryLength, FUNCTION, INT_T, 0);
+
+    // sched_yield doesn't have any arguments
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_MUNLOCK);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+void syscall_munlock() {
+    if(DEBUG_3) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*)"System call m_unlock");
+        println();
+    }
+}
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT3 --------------------------
+// -----------------------------------------------------------------
 
 void process_save(int *process) {
     int i;
@@ -4243,7 +4321,7 @@ void kernel_run() {
 
     while(1) {
         next_pid = kernel_schedule_process();
-        kernel_switch_process(next_pid);
+        kernel_switch_to_process(next_pid);
     }
 }
 
@@ -4257,7 +4335,7 @@ int kernel_schedule_process() {
     return (int) list_entry_get_data(list_pop_front(g_readyqueue));
 }
 
-void kernel_switch_process(int pid) {
+void kernel_switch_to_process(int pid) {
     if(g_running_process_id > 0)
         list_push_back(g_readyqueue, (int*) g_running_process_id);
     
@@ -4319,7 +4397,7 @@ void fct_syscall() {
     } else if (*(registers+REG_V0) == SYSCALL_MALLOC) {
         syscall_malloc();
         pc = pc + 4;
-        // A2-A3
+    // Additional System Calls
     } else if (*(registers+REG_V0) == SYSCALL_SCHED_YIELD) {
         pc = pc + 4;
         syscall_sched_yield();
@@ -4329,6 +4407,12 @@ void fct_syscall() {
     } else if (*(registers+REG_V0) == SYSCALL_SELECT) {
         pc = pc + 4;
         syscall_select();
+    } else if (*(registers+REG_V0) == SYSCALL_MLOCK) {
+        syscall_mlock();
+        pc = pc + 4;
+    } else if (*(registers+REG_V0) == SYSCALL_MUNLOCK) {
+        syscall_munlock();
+        pc = pc + 4;
     } else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
     }
@@ -4989,7 +5073,7 @@ void init_segmentation() {
 
     g_ticks = 0;
     g_interrupts_active = 0;
-    TIME_SLICE = 37;
+    TIME_SLICE = 53;
 }
 
 // -----------------------------------------------------------------
@@ -5774,6 +5858,7 @@ int selfie(int argc, int* argv) {
 int main(int argc, int *argv) {
     DEBUG_1 = 0;
     DEBUG_2 = 0;
+    DEBUG_3 = 0;
 
     initLibrary();
     initScanner();
