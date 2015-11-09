@@ -354,6 +354,9 @@ void lock_set_blockedqueue(int *lock, int *blockedqueue);
 
 void lock_blockqueue_push(int *lock, int *process);
 int  *lock_blockqueue_pop(int *lock);
+int  lock_blockedqueue_is_empty(int *lock);
+
+int  lock_take(int *lock, int *process);
 
 // -----------------------------------------------------------------
 // ----------------------------- STRUCT ----------------------------
@@ -406,6 +409,7 @@ void list_insert_at(int *list, int index, int *data);
 int  *list_remove_at(int *list, int index);
 int  *list_get_entry_at(int *list, int index);
 int  *list_find_entry_by(int *list, int value, int field_nr);
+int  *list_remove_entry_by(int *list, int value, int field_nr);
 
 int  *list_entry_get_next(int *entry);
 int  *list_entry_get_prev(int *entry);
@@ -426,7 +430,7 @@ void list_test();
 // -----------------------------------------------------------------
 
 int  *process_allocate();
-int  *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_offset);
+int  *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_offset, int state);
 
 int  process_get_id(int *process);
 int  process_get_pc(int *process);
@@ -435,6 +439,7 @@ int  *process_get_memory(int *process);
 int  process_get_reg_hi(int *process);
 int  process_get_reg_lo(int *process);
 int  process_get_segment_id(int *process);
+int  process_get_state(int *process);
 
 
 void process_set_id(int *process, int id);
@@ -444,6 +449,7 @@ void process_set_memory(int *process, int *memory);
 void process_set_reg_hi(int *process, int reg_hi);
 void process_set_reg_lo(int *process, int reg_lo);
 void process_set_segment_id(int *process, int segment_id);
+void process_set_state(int *process, int state);
 
 void print_process_list(int *list);
 
@@ -476,6 +482,11 @@ int  MEMORY_SIZE;
 int KERNEL_SCHEDULE = 0;
 int KERNEL_LOCK = 1;
 int KERNEL_UNLOCK = 2;
+
+// Process States
+int PROCESS_RUNNING = 0;
+int PROCESS_READY = 1;
+int PROCESS_BLOCKED = 2;
 
 // -----------------------------------------------------------------
 // ------------------------- SYMBOL TABLE --------------------------
@@ -4185,6 +4196,9 @@ void syscall_mlock() {
         print((int*)"System call mlock");
         println();
     }
+
+    g_kernel_action = KERNEL_LOCK;
+    trap_to_kernel();
 }
 
 void emitMunlock() {
@@ -4204,6 +4218,7 @@ void emitMunlock() {
 }
 
 void syscall_munlock() {
+
     if(DEBUG_3) {
         print((int*) "///////////////////////////////////////////////");
         println();
@@ -4211,6 +4226,9 @@ void syscall_munlock() {
         print((int*)"System call munlock");
         println();
     }
+
+    g_kernel_action = KERNEL_UNLOCK;
+    trap_to_kernel();
 }
 
 void emitGetpid() {
@@ -4263,129 +4281,19 @@ void emitSignal() {
 }
 
 void syscall_signal() {
-
-    *(registers+REG_V0) = g_kernel_action;
-
     if(DEBUG_3) {
         print((int*) "///////////////////////////////////////////////");
         println();
 
         print((int*)"System call signal");
         println();
+        print((int*)"Kernel action: ");
+        printInt(g_kernel_action);
+        println();
     }
+
+    *(registers+REG_V0) = g_kernel_action;
 }
-
-
-// -----------------------------------------------------------------
-// -------------------------- ASSIGNMENT3 --------------------------
-// -----------------------------------------------------------------
-
-void process_save(int *process) {
-    int i;
-
-    if(DEBUG_2) { 
-        print((int*) "///////////////////////////////////////////////");
-        println();
-
-        print((int*) "Save process ...");
-        println();
-    }
-
-    process_set_pc(process, pc);
-    process_set_registers(process, registers);
-    process_set_reg_hi(process, reg_hi);
-    process_set_reg_lo(process, reg_lo);
-
-    if(DEBUG_2) {  
-        print((int*) "id: ");
-        printInt(process_get_id(process));
-        println();
-
-        print((int*) "PC: ");
-        printInt(process_get_pc(process));
-        println();
-
-        print((int*) "reg_hi: ");
-        printInt(process_get_reg_hi(process));
-        println();
-
-        print((int*) "reg_lo: ");
-        printInt(process_get_reg_lo(process));
-        println();
-
-        print((int*) "Registers: ");
-        i = 0;
-        while(i < 32) {
-            printInt(*(process_get_registers(process) + i));
-            print((int*) " ");
-            i = i + 1;
-        }
-        println();
-    }
-}
-
-void process_restore(int *process) {
-    int i;
-
-    if(DEBUG_2) {
-        print((int*) "///////////////////////////////////////////////");
-        println();
-
-        print((int*) "Restore process ...");
-        println();
-    }  
-
-    pc = process_get_pc(process);
-    registers = process_get_registers(process);
-    reg_hi = process_get_reg_hi(process);
-    reg_lo = process_get_reg_lo(process);
-    g_segment_offset = segment_get_start(struct_get_element_at(g_segment_table, process_get_segment_id(process)));
-    g_running_process = process;
-
-    if(DEBUG_2) {
-        print((int*) "id: ");
-        printInt(process_get_id(process));
-        println();
-
-        print((int*) "PC: ");
-        printInt(pc);
-        println();
-
-        print((int*) "reg_hi: ");
-        printInt(reg_hi);
-        println();
-
-        print((int*) "reg_lo: ");
-        printInt(reg_lo);
-        println();
-
-        print((int*) "Segment offset: ");
-        printInt(g_segment_offset);
-        println();
-
-        print((int*) "Register Address: ");
-        printInt((int) registers);
-        println();
-
-        print((int*) "Registers: ");
-        i = 0;
-        while(i < 32) {
-            printInt(*(registers + i));
-            print((int*) " ");
-            i = i + 1;
-        }
-        println();
-
-        print((int*) "Stack pointer: ");
-        printInt(*(registers + REG_SP));
-        println();
-
-        print((int*) "Global pointer: ");
-        printInt(*(registers + REG_GP));
-        println();
-    }
-}
-
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -4417,9 +4325,12 @@ void kernel_run() {
         action = signal();
 
         if(action == KERNEL_SCHEDULE) {
+            if(process_get_id(g_running_process) > 0)
+                list_push_back(g_readyqueue, g_running_process);
             kernel_switch_to_process(kernel_schedule_process());
         } else if(action == KERNEL_LOCK) {
-            
+            lock_take(g_lock, g_running_process);
+            kernel_switch_to_process(kernel_schedule_process());
         } else if(action == KERNEL_UNLOCK) {
             
         }
@@ -4431,19 +4342,35 @@ void kernel_load_executable(int pid, int segment_size, int *filename) {
 
     process = process_allocate();
     process_set_id(process, pid);
+    process_set_state(process, PROCESS_READY);
 
     list_push_back(g_readyqueue, process);
     alarm(pid, segment_size, filename);
 }
 
 int *kernel_schedule_process() {
+    if(list_is_empty(g_readyqueue))
+        return g_running_process;
+
     return list_entry_get_data(list_pop_front(g_readyqueue));
 }
 
 void kernel_switch_to_process(int *process) {
 
-    if(process_get_id(g_running_process) > 0)
-        list_push_back(g_readyqueue, g_running_process);
+    // print((int*)"switch!");
+    // println();
+
+    // print((int*)"readyqueue:");
+    // println();
+    // print_process_list(g_readyqueue);
+
+    // print((int*)"blockedqueue:");
+    // println();
+    //print_process_list(lock_get_blockedqueue(g_lock));
+    
+    // print((int*)"running process: ");
+    // printInt(process_get_id(process));
+    // println();
     
     g_running_process = process;
     select(0, process_get_id(process));
@@ -4495,6 +4422,41 @@ void lock_blockqueue_push(int *lock, int *process) {
 
 int *lock_blockqueue_pop(int *lock) {
     return list_pop_front(lock_get_blockedqueue(lock));
+}
+
+int lock_blockedqueue_is_empty(int *lock) {
+    return list_is_empty(lock_get_blockedqueue(lock));
+}
+
+int lock_take(int *lock, int *process) {
+    int pid;
+
+    //print((int*)"lock take!");
+    //println();
+
+    if(lock_is_taken(lock)) {
+        pid = process_get_id(process);
+        lock_blockqueue_push(lock, process);
+        list_remove_entry_by(g_readyqueue, pid, 0);
+        process_set_state(process, PROCESS_BLOCKED);
+
+        // print((int*)"pid:");
+        // printInt(pid);
+        // println();
+
+        // print((int*)"readyqueue:");
+        // println();
+        // print_process_list(g_readyqueue);
+
+        // print((int*)"blockedqueue:");
+        // println();
+        // print_process_list(lock_get_blockedqueue(g_lock));
+
+        return 0;
+    }
+    
+    lock_set_process(lock, process);
+    return 1;
 }
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -4562,11 +4524,11 @@ void fct_syscall() {
         pc = pc + 4;
         syscall_select();
     } else if (*(registers+REG_V0) == SYSCALL_MLOCK) {
+        pc = pc + 4;
         syscall_mlock();
-        pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_MUNLOCK) {
-        syscall_munlock();
         pc = pc + 4;
+        syscall_munlock();
     } else if (*(registers+REG_V0) == SYSCALL_GETPID) {
         syscall_getpid();
         pc = pc + 4;
@@ -5223,6 +5185,112 @@ void trap_to_kernel() {
     g_interrupts_active = 0;
 }
 
+void process_save(int *process) {
+    int i;
+
+    if(DEBUG_2) { 
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*) "Save process ...");
+        println();
+    }
+
+    process_set_pc(process, pc);
+    process_set_registers(process, registers);
+    process_set_reg_hi(process, reg_hi);
+    process_set_reg_lo(process, reg_lo);
+
+    if(DEBUG_2) {  
+        print((int*) "id: ");
+        printInt(process_get_id(process));
+        println();
+
+        print((int*) "PC: ");
+        printInt(process_get_pc(process));
+        println();
+
+        print((int*) "reg_hi: ");
+        printInt(process_get_reg_hi(process));
+        println();
+
+        print((int*) "reg_lo: ");
+        printInt(process_get_reg_lo(process));
+        println();
+
+        print((int*) "Registers: ");
+        i = 0;
+        while(i < 32) {
+            printInt(*(process_get_registers(process) + i));
+            print((int*) " ");
+            i = i + 1;
+        }
+        println();
+    }
+}
+
+void process_restore(int *process) {
+    int i;
+
+    if(DEBUG_2) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*) "Restore process ...");
+        println();
+    }  
+
+    pc = process_get_pc(process);
+    registers = process_get_registers(process);
+    reg_hi = process_get_reg_hi(process);
+    reg_lo = process_get_reg_lo(process);
+    g_segment_offset = segment_get_start(struct_get_element_at(g_segment_table, process_get_segment_id(process)));
+    g_running_process = process;
+
+    if(DEBUG_2) {
+        print((int*) "id: ");
+        printInt(process_get_id(process));
+        println();
+
+        print((int*) "PC: ");
+        printInt(pc);
+        println();
+
+        print((int*) "reg_hi: ");
+        printInt(reg_hi);
+        println();
+
+        print((int*) "reg_lo: ");
+        printInt(reg_lo);
+        println();
+
+        print((int*) "Segment offset: ");
+        printInt(g_segment_offset);
+        println();
+
+        print((int*) "Register Address: ");
+        printInt((int) registers);
+        println();
+
+        print((int*) "Registers: ");
+        i = 0;
+        while(i < 32) {
+            printInt(*(registers + i));
+            print((int*) " ");
+            i = i + 1;
+        }
+        println();
+
+        print((int*) "Stack pointer: ");
+        printInt(*(registers + REG_SP));
+        println();
+
+        print((int*) "Global pointer: ");
+        printInt(*(registers + REG_GP));
+        println();
+    }
+}
+
 // -----------------------------------------------------------------
 // -------------------------- ASSIGNMENT2 --------------------------
 // -----------------------------------------------------------------
@@ -5236,7 +5304,7 @@ void init_segmentation() {
 
     g_ticks = 0;
     g_interrupts_active = 0;
-    TIME_SLICE = 53;
+    TIME_SLICE = 1000;
 
     g_kernel_action = KERNEL_SCHEDULE; // TODO: 
 }
@@ -5456,8 +5524,8 @@ int *list_pop_back(int *list) {
     prev = list_entry_get_prev(tail);
     // Set new tail to PREV
     list_set_tail(list, prev);
-    size = list_get_size(list);
     // Reduce size by one
+    size = list_get_size(list);
     list_set_size(list, size - 1);
     
     if(list_is_empty(list) == 0)
@@ -5516,7 +5584,9 @@ int *list_remove_at(int *list, int index) {
     prev = list_get_entry_at(list, index - 1);
     entry = list_entry_get_next(prev);
     next = list_entry_get_next(entry);
+
     list_entry_set_next(prev, next);
+    list_entry_set_prev(next, prev);
     list_set_size(list, size - 1);
 
     return entry;
@@ -5568,6 +5638,34 @@ int *list_find_entry_by(int *list, int value, int field_nr) {
     }
 
     return (int*)0;
+}
+
+int  *list_remove_entry_by(int *list, int value, int field_nr) {
+    int *prev;
+    int *entry;
+    int *next;
+    int size;
+
+    entry = list_find_entry_by(list, value, field_nr);
+
+    if(entry == (int*)0)
+        return (int*)0;
+
+    prev = list_entry_get_prev(entry);
+    next = list_entry_get_next(entry);
+    size = list_get_size(list);
+
+    if(prev == (int*)0)
+        list_set_head(list, next);
+
+    if(next == (int*)0)
+        list_set_tail(list, prev);
+
+    list_entry_set_next(prev, next);
+    list_entry_set_prev(next, prev);
+    list_set_size(list, size - 1);
+
+    return entry;
 }
 
 int list_is_in_bounds(int *list, int index) {
@@ -5666,13 +5764,13 @@ void list_entry_set_data(int *entry, int *data) {
 int  *process_allocate() {
     int *process;
 
-    process = (int*)malloc(6 * 4);
+    process = (int*)malloc(7 * 4);
 
     return process;
 }
 
 // TODO: Change memory to segment
-int *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_id) {
+int *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_id, int state) {
     int *process;
 
     // process:
@@ -5685,13 +5783,14 @@ int *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_id
     // |  5 | segment_id       |
     // +----+------------------+
 
-    process = (int*)malloc(6 * 4);
+    process = (int*)malloc(7 * 4);
     process_set_id(process, id);
     process_set_pc(process, 0); // Initially always 0
     process_set_registers(process, registers);
     process_set_reg_hi(process, reg_hi);
     process_set_reg_lo(process, reg_lo);
     process_set_segment_id(process, segment_id);
+    process_set_state(process, state);
 
     return process;
 }
@@ -5721,6 +5820,10 @@ int process_get_segment_id(int *process) {
     return *(process + 5);
 }
 
+int process_get_state(int *process) {
+    return *(process + 6);
+}
+
 // Setters
 void process_set_id(int *process, int id) {
     *process = id;
@@ -5745,6 +5848,11 @@ void process_set_reg_lo(int *process, int reg_lo) {
 void process_set_segment_id(int *process, int segment_id) {
     *(process + 5) = segment_id;
 }
+
+void process_set_state(int *process, int state) {
+    *(process + 6) = state;
+}
+
 
 void print_process_list(int *list) {
     int i;
@@ -5785,7 +5893,7 @@ void list_test() {
     println();
 
     list = list_init();
-    process = process_init(1, registers, 0, 0, 0);
+    process = process_init(1, registers, 0, 0, 0, PROCESS_READY);
     
     print((int*) "push front 1");
     println();
@@ -5827,35 +5935,35 @@ void list_test() {
     println();
     print_process_list(list);
 
-    process = process_init(2, registers, 0, 0, 0);
+    process = process_init(2, registers, 0, 0, 0, PROCESS_READY);
     
     print((int*) "push front 2");
     println();
     list_push_front(list, process);
     print_process_list(list);
 
-    process = process_init(3, registers, 0, 0, 0);
+    process = process_init(3, registers, 0, 0, 0, PROCESS_READY);
     
     print((int*) "push back 3");
     println();
     list_push_back(list, process);
     print_process_list(list);
 
-    process = process_init(9, registers, 0, 0, 0);
+    process = process_init(9, registers, 0, 0, 0, PROCESS_READY);
 
     print((int*) "push back 9");
     println();
     list_push_back(list, process);
     print_process_list(list);
 
-    process = process_init(4, registers, 0, 0, 0);
+    process = process_init(4, registers, 0, 0, 0, PROCESS_READY);
     
     print((int*) "push front 4");
     println();
     list_push_front(list, process);
     print_process_list(list);
 
-    process = process_init(5, registers, 0, 0, 0);
+    process = process_init(5, registers, 0, 0, 0, PROCESS_READY);
     
     print((int*) "push front 5");
     println();
@@ -5869,14 +5977,14 @@ void list_test() {
     println();
     print_process_list(list);
 
-    process = process_init(6, registers, 0, 0, 0);
+    process = process_init(6, registers, 0, 0, 0, PROCESS_READY);
     
     print((int*) "insert 6 at 2");
     println();
     list_insert_at(list, 2, process);
     print_process_list(list);
 
-    process = process_init(7, registers, 0, 0, 0);
+    process = process_init(7, registers, 0, 0, 0, PROCESS_READY);
     
     print((int*) "insert 7 at 0");
     println();
@@ -5888,7 +5996,7 @@ void list_test() {
     list_sort_by(list, 0);
     print_process_list(list);
 
-    process = process_init(8, registers, 0, 0, 0);
+    process = process_init(8, registers, 0, 0, 0, PROCESS_READY);
     
     print((int*) "insert 8 at -1");
     println();
