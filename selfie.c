@@ -16,7 +16,7 @@
 // resolve self-reference in systems code which is seen as the key
 // challenge when teaching systems engineering, hence the name.
 //
-// Selfie is a fully self-referential 4k-line C implementation of:
+// Selfie is a fully self-referential 5k-line C implementation of:
 //
 // 1. a self-compiling compiler called cstarc that compiles
 //    a tiny but powerful subset of C called C Star (C*) to
@@ -26,9 +26,10 @@
 // 3. a tiny C* library called libcstar utilized by cstarc and mipster.
 //
 // Selfie is kept minimal for simplicity and implemented in a single file.
-// There is no linker, assembler, or debugger. However, there is minimal
+// There is neither a linker nor an assembler. However, there is a simple
+// profiler and disassembler and even a simple debugger as well as minimal
 // operating system support in the form of MIPS32 o32 system calls built
-// into the emulator. Selfie is meant to be extended in numerous ways.
+// into the emulator.
 //
 // C* is a tiny Turing-complete subset of C that includes dereferencing
 // (the * operator) but excludes data structures, bitwise and Boolean
@@ -88,6 +89,8 @@ int  stringCompare(int *s, int *t);
 int  atoi(int *s);
 int* itoa(int n, int *s, int b, int a, int p);
 
+void putCharacter(int character);
+
 void print(int *s);
 void println();
 
@@ -129,7 +132,23 @@ int *power_of_two_table;
 int INT_MAX; // maximum numerical value of an integer
 int INT_MIN; // minimum numerical value of an integer
 
-int *string_buffer;
+int *character_buffer; // buffer for reading and writing characters
+
+int *string_buffer; // buffer for printing
+
+// 0 = O_RDONLY (0x0000)
+int O_RDONLY = 0;
+
+// 577 = 0x0241 = O_CREAT (0x0040) | O_WRONLY (0x0001) | O_TRUNC (0x0200)
+int O_CREAT_WRONLY_TRUNC = 577; // flags for opening write-only files
+
+// 420 = 00644 = S_IRUSR (00400) | S_IWUSR (00200) | S_IRGRP (00040) | S_IROTH (00004)
+int S_IRUSR_IWUSR_IRGRP_IROTH = 420; // flags for rw-r--r-- file permissions
+
+// ------------------------ GLOBAL VARIABLES -----------------------
+
+int *outputName = (int*) 0;
+int outputFD    = 1;
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -151,6 +170,8 @@ void initLibrary() {
     // computing INT_MAX and INT_MIN without overflows
     INT_MAX = (twoToThePowerOf(30) - 1) * 2 + 1;
     INT_MIN = -INT_MAX - 1;
+
+    character_buffer = malloc(1);
 
     // accommodate 32-bit numbers for itoa
     string_buffer = malloc(33);
@@ -222,8 +243,6 @@ int SYM_STRING       = 27; // string
 
 int *SYMBOLS; // array of strings representing symbols
 
-int *character_buffer; // buffer for reading characters
-
 int maxIdentifierLength = 64; // maximum number of characters in an identifier
 int maxIntegerLength    = 10; // maximum number of characters in an integer
 int maxStringLength     = 128; // maximum number of characters in a string
@@ -247,7 +266,7 @@ int character; // most recently read character
 int symbol;    // most recently recognized symbol
 
 int *sourceName = (int*) 0; // name of source file
-int sourceFD    = 0;        // file descriptor of source file
+int sourceFD    = 0;        // file descriptor of open source file
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -282,8 +301,6 @@ void initScanner () {
     *(SYMBOLS + SYM_MOD)          = (int) "%";
     *(SYMBOLS + SYM_CHARACTER)    = (int) "character";
     *(SYMBOLS + SYM_STRING)       = (int) "string";
-
-    character_buffer = malloc(1);
 
     character = CHAR_EOF;
     symbol    = SYM_EOF;
@@ -414,7 +431,7 @@ void emitLeftShiftBy(int b);
 void emitMainEntry();
 
 // -----------------------------------------------------------------
-// ----------------------------- MAIN ------------------------------
+// --------------------------- COMPILER ----------------------------
 // -----------------------------------------------------------------
 
 void compile();
@@ -607,7 +624,7 @@ void initDecoder() {
 }
 
 // -----------------------------------------------------------------
-// ---------------------------- BINARY -----------------------------
+// ----------------------------- CODE ------------------------------
 // -----------------------------------------------------------------
 
 int  loadBinary(int addr);
@@ -637,12 +654,18 @@ int maxBinaryLength = 131072; // 128KB
 
 // ------------------------ GLOBAL VARIABLES -----------------------
 
-int *binary       = (int*) 0;
-int  binaryLength = 0;
+int *binary = (int*) 0; // binary of emitted instructions
 
-int *binaryName   = (int*) 0;
+int binaryLength = 0; // length of binary in bytes incl. globals & strings
 
-int *sourceLineNumber = (int*) 0;
+int codeLength = 0; // length of code portion of binary in bytes
+
+int *binaryName   = (int*) 0; // file name of binary
+
+int *sourceLineNumber = (int*) 0; // source line number per emitted instruction
+
+int *assemblyName = (int*) 0; // name of assembly file
+int assemblyFD    = 0;        // file descriptor of open assembly file
 
 // -----------------------------------------------------------------
 // --------------------------- SYSCALLS ----------------------------
@@ -667,11 +690,11 @@ void emitPutchar();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
-int SYSCALL_EXIT    = 4001;
-int SYSCALL_READ    = 4003;
-int SYSCALL_WRITE   = 4004;
-int SYSCALL_OPEN    = 4005;
-int SYSCALL_MALLOC  = 5001;
+int SYSCALL_EXIT   = 4001;
+int SYSCALL_READ   = 4003;
+int SYSCALL_WRITE  = 4004;
+int SYSCALL_OPEN   = 4005;
+int SYSCALL_MALLOC = 5001;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -683,28 +706,34 @@ int SYSCALL_MALLOC  = 5001;
 // ---------------------------- MEMORY -----------------------------
 // -----------------------------------------------------------------
 
-void initMemory(int megabytes);
+void initMemory(int bytes);
 
 int tlb(int vaddr);
 
 int  loadMemory(int vaddr);
 void storeMemory(int vaddr, int data);
 
+// ------------------------ GLOBAL CONSTANTS -----------------------
+
+int MEGABYTE = 1048576;
+
 // ------------------------ GLOBAL VARIABLES -----------------------
 
-int  memorySize = 0;
-int *memory     = (int*) 0;
+int memorySize = 0; // size of memory in bytes
+
+int *memory = (int*) 0; // mipster memory
 
 // ------------------------- INITIALIZATION ------------------------
 
-void initMemory(int megabytes) {
-    if (megabytes < 0)
-        megabytes = 64;
-    else if (megabytes > 1024)
-        megabytes = 1024;
+void initMemory(int bytes) {
+    if (bytes < 0)
+        memorySize = 64 * MEGABYTE;
+    else if (bytes > 1024 * MEGABYTE)
+        memorySize = 1024 * MEGABYTE;
+    else
+        memorySize = bytes;
 
-    memorySize = megabytes * 1024 * 1024;
-    memory     = malloc(memorySize);
+    memory = malloc(memorySize);
 }
 
 // -----------------------------------------------------------------
@@ -741,16 +770,9 @@ void printException(int enumber);
 
 void exception_handler(int enumber);
 
-void pre_debug();
-void post_debug();
-
 void fetch();
 void execute();
 void run();
-
-// -----------------------------------------------------------------
-// ----------------------------- MAIN ------------------------------
-// -----------------------------------------------------------------
 
 void up_push(int value);
 int  up_malloc(int size);
@@ -765,6 +787,7 @@ int fixedPointRatio(int a, int b);
 int  printCounters(int total, int *counters, int max);
 void printProfile(int *message, int total, int *counters);
 
+void disassemble();
 void emulate(int argc, int *argv);
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
@@ -775,9 +798,6 @@ int debug_read    = 0;
 int debug_write   = 0;
 int debug_open    = 0;
 int debug_malloc  = 0;
-
-int debug_registers   = 0;
-int debug_disassemble = 0;
 
 int EXCEPTION_SIGNAL             = 1;
 int EXCEPTION_ADDRESSERROR       = 2;
@@ -792,7 +812,7 @@ int *EXCEPTIONS; // array of strings representing exceptions
 
 int *registers; // general purpose registers
 
-int pc = 0; // program counter
+int pc = 4; // program counter
 int ir = 0; // instruction record
 
 int reg_hi = 0; // hi register for multiplication/division
@@ -800,17 +820,21 @@ int reg_lo = 0; // lo register for multiplication/division
 
 int halt = 0; // flag for halting mipster
 
-int calls            = 0;
-int *callsPerAddress = (int*) 0;
+int interpret = 0;
 
-int loops            = 0;
-int *loopsPerAddress = (int*) 0;
+int debug = 0;
 
-int loads            = 0;
-int *loadsPerAddress = (int*) 0;
+int calls            = 0;        // total number of executed procedure calls
+int *callsPerAddress = (int*) 0; // number of executed calls of each procedure
 
-int stores            = 0;
-int *storesPerAddress = (int*) 0;
+int loops            = 0;        // total number of executed loop iterations
+int *loopsPerAddress = (int*) 0; // number of executed iterations of each loop
+
+int loads            = 0;        // total number of executed memory loads
+int *loadsPerAddress = (int*) 0; // number of executed loads per load operation
+
+int stores            = 0;        // total number of executed memory stores
+int *storesPerAddress = (int*) 0; // number of executed stores per store operation
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -828,22 +852,24 @@ void initInterpreter() {
 }
 
 void resetInterpreter() {
-    pc = 0;
+    pc = 4;
 
     reg_hi = 0;
     reg_lo = 0;
 
-    calls           = 0;
-    callsPerAddress = malloc(maxBinaryLength);
+    if (interpret) {
+        calls           = 0;
+        callsPerAddress = malloc(maxBinaryLength);
 
-    loops           = 0;
-    loopsPerAddress = malloc(maxBinaryLength);
+        loops           = 0;
+        loopsPerAddress = malloc(maxBinaryLength);
 
-    loads           = 0;
-    loadsPerAddress = malloc(maxBinaryLength);
+        loads           = 0;
+        loadsPerAddress = malloc(maxBinaryLength);
 
-    stores           = 0;
-    storesPerAddress = malloc(maxBinaryLength);
+        stores           = 0;
+        storesPerAddress = malloc(maxBinaryLength);
+    }
 }
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -878,7 +904,8 @@ int rightShift(int n, int b) {
     else if (n >= 0)
         return n / twoToThePowerOf(b);
     else
-        // works even if n == INT_MIN
+        // works even if n == INT_MIN:
+        // shift right n with msb reset and then restore msb
         return ((n + 1) + INT_MAX) / twoToThePowerOf(b) +
             (INT_MAX / twoToThePowerOf(b) + 1);
 }
@@ -1011,6 +1038,7 @@ int* itoa(int n, int *s, int b, int a, int p) {
                 // rightmost decimal digit of 32-bit INT_MIN
                 storeCharacter(s, 0, '8');
 
+                // avoids overflow
                 n = -(n / 10);
                 i = 1;
             } else
@@ -1020,19 +1048,23 @@ int* itoa(int n, int *s, int b, int a, int p) {
                 // rightmost non-decimal digit of INT_MIN
                 storeCharacter(s, 0, '0');
 
+                // avoids setting n to 0
                 n = (rightShift(INT_MIN, 1) / b) * 2;
                 i = 1;
             } else {
+                // reset msb, restore below
                 n   = rightShift(leftShift(n, 1), 1);
                 msb = 1;
             }
         }
+
+        // assert: n > 0
     }
 
     while (n != 0) {
         if (p > 0)
             if (i == p) {
-                storeCharacter(s, i, '.');
+                storeCharacter(s, i, '.'); // set point of fixed point number
 
                 i = i + 1;
                 p = 0;
@@ -1047,6 +1079,7 @@ int* itoa(int n, int *s, int b, int a, int p) {
         i = i + 1;
 
         if (msb == 1) {
+            // restore msb from above
             n   = n + (rightShift(INT_MIN, 1) / b) * 2;
             msb = 0;
         }
@@ -1054,13 +1087,13 @@ int* itoa(int n, int *s, int b, int a, int p) {
 
     if (p > 0) {
         while (i < p) {
-            storeCharacter(s, i, '0');
+            storeCharacter(s, i, '0'); // no point yet, fill with 0s
 
             i = i + 1;
         }
 
-        storeCharacter(s, i, '.');
-        storeCharacter(s, i + 1, '0');
+        storeCharacter(s, i, '.');     // set point
+        storeCharacter(s, i + 1, '0'); // leading 0
 
         i = i + 2;
         p = 0;
@@ -1068,7 +1101,7 @@ int* itoa(int n, int *s, int b, int a, int p) {
 
     if (b == 10) {
         if (sign) {
-            storeCharacter(s, i, '-');
+            storeCharacter(s, i, '-'); // negative decimal numbers start with -
 
             i = i + 1;
         }
@@ -1080,18 +1113,18 @@ int* itoa(int n, int *s, int b, int a, int p) {
         }
     } else {
         while (i < a) {
-            storeCharacter(s, i, '0'); // align with zeros
+            storeCharacter(s, i, '0'); // align with 0s
 
             i = i + 1;
         }
 
         if (b == 8) {
-            storeCharacter(s, i, '0');
+            storeCharacter(s, i, '0');     // octal numbers start with 00
             storeCharacter(s, i + 1, '0');
 
             i = i + 2;
         } else if (b == 16) {
-            storeCharacter(s, i, 'x');
+            storeCharacter(s, i, 'x');     // hexadecimal numbers start with 0x
             storeCharacter(s, i + 1, '0');
 
             i = i + 2;
@@ -1105,24 +1138,43 @@ int* itoa(int n, int *s, int b, int a, int p) {
     return s;
 }
 
+void putCharacter(int character) {
+    if (outputFD == 1)
+        putchar(character);
+    else {
+        *character_buffer = character;
+
+        if (write(outputFD, character_buffer, 1) != 1) {
+            outputFD = 1;
+
+            print(selfieName);
+            print((int*) ": could not write character to output file ");
+            print(outputName);
+            println();
+
+            exit(-1);
+        }
+    }
+}
+
 void print(int *s) {
     int i;
 
     i = 0;
 
     while (loadCharacter(s, i) != 0) {
-        putchar(loadCharacter(s, i));
+        putCharacter(loadCharacter(s, i));
 
         i = i + 1;
     }
 }
 
 void println() {
-    putchar(CHAR_LF);
+    putCharacter(CHAR_LF);
 }
 
 void printCharacter(int character) {
-    putchar(CHAR_SINGLEQUOTE);
+    putCharacter(CHAR_SINGLEQUOTE);
 
     if (character == CHAR_EOF)
         print((int*) "end of file");
@@ -1133,17 +1185,17 @@ void printCharacter(int character) {
     else if (character == CHAR_CR)
         print((int*) "carriage return");
     else
-        putchar(character);
+        putCharacter(character);
 
-    putchar(CHAR_SINGLEQUOTE);
+    putCharacter(CHAR_SINGLEQUOTE);
 }
 
 void printString(int *s) {
-    putchar(CHAR_DOUBLEQUOTE);
+    putCharacter(CHAR_DOUBLEQUOTE);
 
     print(s);
     
-    putchar(CHAR_DOUBLEQUOTE);
+    putCharacter(CHAR_DOUBLEQUOTE);
 }
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -1157,14 +1209,14 @@ void printString(int *s) {
 // -----------------------------------------------------------------
 
 void printSymbol(int symbol) {
-    putchar(CHAR_DOUBLEQUOTE);
+    putCharacter(CHAR_DOUBLEQUOTE);
 
     if (symbol == SYM_EOF)
         print((int*) "end of file");
     else
         print((int*) *(SYMBOLS + symbol));
 
-    putchar(CHAR_DOUBLEQUOTE);
+    putCharacter(CHAR_DOUBLEQUOTE);
 }
 
 void printLineNumber(int* message) {
@@ -1860,6 +1912,7 @@ void tfree(int numberOfTemporaries) {
 
 void save_temporaries() {
     while (allocatedTemporaries > 0) {
+        // push temporary onto stack
         emitIFormat(OP_ADDIU, REG_SP, REG_SP, -4);
         emitIFormat(OP_SW, REG_SP, currentTemporary(), 0);
 
@@ -1871,6 +1924,7 @@ void restore_temporaries(int numberOfTemporaries) {
     while (allocatedTemporaries < numberOfTemporaries) {
         talloc();
 
+        // restore temporary from stack
         emitIFormat(OP_LW, REG_SP, currentTemporary(), 0);
         emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
     }
@@ -3168,7 +3222,7 @@ void emitLeftShiftBy(int b) {
 }
 
 void emitMainEntry() {
-    // instruction at address zero cannot be fixed up
+    // instruction at address zero cannot be fixed up, so just put a NOP there
     emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_NOP);
 
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "main", binaryLength, FUNCTION, INT_T, 0);
@@ -3184,7 +3238,7 @@ void emitMainEntry() {
 }
 
 // -----------------------------------------------------------------
-// ----------------------------- MAIN ------------------------------
+// --------------------------- COMPILER ----------------------------
 // -----------------------------------------------------------------
 
 void compile() {
@@ -3193,7 +3247,7 @@ void compile() {
     print(sourceName);
     println();
 
-    sourceFD = open(sourceName, 0, 0); // 0 = O_RDONLY
+    sourceFD = open(sourceName, O_RDONLY, 0);
 
     if (sourceFD < 0) {
         print(selfieName);
@@ -3214,6 +3268,9 @@ void compile() {
     binary       = malloc(maxBinaryLength);
     binaryLength = 0;
 
+    // reset code length
+    codeLength = 0;
+
     // allocate space for storing source code line numbers
     sourceLineNumber = malloc(maxBinaryLength);
 
@@ -3232,6 +3289,10 @@ void compile() {
 
     // parser
     gr_cstar();
+
+    // set and store code length in first "instruction"
+    codeLength = binaryLength;
+    *binary    = codeLength;
 
     // emit global variables and strings
     emitGlobalsStrings();
@@ -3422,7 +3483,7 @@ void decodeJFormat() {
 }
 
 // -----------------------------------------------------------------
-// ---------------------------- BINARY -----------------------------
+// ----------------------------- CODE ------------------------------
 // -----------------------------------------------------------------
 
 int loadBinary(int addr) {
@@ -3519,6 +3580,7 @@ int copyStringToBinary(int *s, int a) {
     w = a + l;
 
     if (l % 4 != 0)
+        // making sure w is a multiple of 4 bytes
         w = w + 4 - l % 4;
 
     while (a < w) {
@@ -3557,10 +3619,8 @@ void emitGlobalsStrings() {
 
 void emit() {
     int fd;
-
-    // 1537 = 0x0601 = O_CREAT (0x0200) | O_WRONLY (0x0001) | O_TRUNC (0x0400)
-    // 420 = 00644 = S_IRUSR (00400) | S_IWUSR (00200) | S_IRGRP (00040) | S_IROTH (00004)
-    fd = open(binaryName, 1537, 420);
+    
+    fd = open(binaryName, O_CREAT_WRONLY_TRUNC, S_IRUSR_IWUSR_IRGRP_IROTH);
 
     if (fd < 0) {
         print(selfieName);
@@ -3583,7 +3643,7 @@ void load() {
     int fd;
     int numberOfReadBytes;
 
-    fd = open(binaryName, 0, 0); // 0 = O_RDONLY
+    fd = open(binaryName, O_RDONLY, 0);
 
     if (fd < 0) {
         print(selfieName);
@@ -3596,6 +3656,8 @@ void load() {
 
     binary       = malloc(maxBinaryLength);
     binaryLength = 0;
+
+    codeLength = 0;
 
     sourceLineNumber = (int*) 0;
 
@@ -3621,6 +3683,8 @@ void load() {
         if (numberOfReadBytes == 4)
             binaryLength = binaryLength + 4;
     }
+
+    codeLength = *binary;
 }
 
 // -----------------------------------------------------------------
@@ -3634,11 +3698,17 @@ void emitExit() {
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
 
+    // load argument for exit
     emitIFormat(OP_LW, REG_SP, REG_A0, 0); // exit code
+
+    // remove the argument from the stack
     emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
 
+    // load the correct syscall number and invoke syscall
     emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_EXIT);
     emitRFormat(0, 0, 0, 0, FCT_SYSCALL);
+
+    // never returns here
 }
 
 void syscall_exit() {
@@ -3673,6 +3743,7 @@ void emitRead() {
     emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_READ);
     emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
 
+    // jump back to caller, return value is in REG_V0
     emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
@@ -3811,17 +3882,12 @@ void emitMalloc() {
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
 
-    // load argument for malloc (size)
     emitIFormat(OP_LW, REG_SP, REG_A0, 0);
-
-    // remove the argument from the stack
     emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
 
-    // load the correct syscall number and invoke syscall
     emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_MALLOC);
     emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
 
-    // jump back to caller, return value is in REG_V0
     emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
@@ -3909,237 +3975,487 @@ void storeMemory(int vaddr, int data) {
 // -----------------------------------------------------------------
 
 void fct_syscall() {
-    if (debug_disassemble) {
+    if (debug) {
         printFunction(function);
         println();
     }
 
-    if (*(registers+REG_V0) == SYSCALL_EXIT) {
-        syscall_exit();
-    } else if (*(registers+REG_V0) == SYSCALL_READ) {
-        syscall_read();
-    } else if (*(registers+REG_V0) == SYSCALL_WRITE) {
-        syscall_write();
-    } else if (*(registers+REG_V0) == SYSCALL_OPEN) {
-        syscall_open();
-    } else if (*(registers+REG_V0) == SYSCALL_MALLOC) {
-        syscall_malloc();
-    } else {
-        exception_handler(EXCEPTION_UNKNOWNSYSCALL);
-    }
+    if (interpret) {
+        if (*(registers+REG_V0) == SYSCALL_EXIT) {
+            syscall_exit();
+        } else if (*(registers+REG_V0) == SYSCALL_READ) {
+            syscall_read();
+        } else if (*(registers+REG_V0) == SYSCALL_WRITE) {
+            syscall_write();
+        } else if (*(registers+REG_V0) == SYSCALL_OPEN) {
+            syscall_open();
+        } else if (*(registers+REG_V0) == SYSCALL_MALLOC) {
+            syscall_malloc();
+        } else {
+            exception_handler(EXCEPTION_UNKNOWNSYSCALL);
+        }
 
-    pc = pc + 4;
+        pc = pc + 4;
+    }
 }
 
 void fct_nop() {
-    pc = pc + 4;
-
-    if (debug_disassemble) {
+    if (debug) {
         printFunction(function);
         println();
     }
+
+    if (interpret)
+        pc = pc + 4;
 }
 
 void op_jal() {
-    *(registers+REG_RA) = pc + 8;
-
-    pc = instr_index * 4;
-
-    // keep track of number of procedure calls
-    calls = calls + 1;
-
-    *(callsPerAddress + pc / 4) = *(callsPerAddress + pc / 4) + 1;
-
-    // TODO: execute delay slot
-
-    if (debug_disassemble) {
+    if (debug) {
         printOpcode(opcode);
         print((int*) " ");
-        print(itoa(instr_index, string_buffer, 16, 8, 0));
+        print(itoa(instr_index, string_buffer, 16, 0, 0));
+        print((int*) "[");
+        print(itoa(instr_index * 4, string_buffer, 16, 0, 0));
+        print((int*) "]");
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(REG_RA);
+            print((int*) "=");
+            print(itoa(*(registers+REG_RA), string_buffer, 16, 0, 0));
+        }
+    }
+
+    if (interpret) {
+        *(registers+REG_RA) = pc + 8;
+
+        pc = instr_index * 4;
+
+        // keep track of number of procedure calls
+        calls = calls + 1;
+
+        *(callsPerAddress + pc / 4) = *(callsPerAddress + pc / 4) + 1;
+
+        // TODO: execute delay slot
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> ");
+            printRegister(REG_RA);
+            print((int*) "=");
+            print(itoa(*(registers+REG_RA), string_buffer, 16, 0, 0));
+            print((int*) ",$pc=");
+            print(itoa(pc, string_buffer, 16, 0, 0));
+        }
         println();
     }
 }
 
 void op_j() {
-    pc = instr_index * 4;
-
-    // TODO: execute delay slot
-
-    if (debug_disassemble) {
+    if (debug) {
         printOpcode(opcode);
         print((int*) " ");
-        print(itoa(instr_index, string_buffer, 16, 8, 0));
+        print(itoa(instr_index, string_buffer, 16, 0, 0));
+        print((int*) "[");
+        print(itoa(instr_index * 4, string_buffer, 16, 0, 0));
+        print((int*) "]");
+    }
+
+    if (interpret) {
+        pc = instr_index * 4;
+
+        // TODO: execute delay slot
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) ": -> $pc=");
+            print(itoa(pc, string_buffer, 16, 0, 0));
+        }
         println();
     }
 }
 
 void op_beq() {
-    pc = pc + 4;
-
-    if (*(registers+rs) == *(registers+rt)) {
-        pc = pc + signExtend(immediate) * 4;
-
-        if (signExtend(immediate) < 0) {
-            // keep track of number of loop iterations
-            loops = loops + 1;
-
-            *(loopsPerAddress + pc / 4) = *(loopsPerAddress + pc / 4) + 1;
-        }
-
-        // TODO: execute delay slot
-    }
-
-    if (debug_disassemble) {
+    if (debug) {
         printOpcode(opcode);
         print((int*) " ");
         printRegister(rs);
-        putchar(',');
+        print((int*) ",");
         printRegister(rt);
-        putchar(',');
+        print((int*) ",");
         print(itoa(signExtend(immediate), string_buffer, 10, 0, 0));
+        print((int*) "[");
+        print(itoa(pc + 4 + signExtend(immediate) * 4, string_buffer, 16, 0, 0));
+        print((int*) "]");
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rs);
+            print((int*) "=");
+            print(itoa(*(registers+rs), string_buffer, 10, 0, 0));
+            print((int*) ",");
+            printRegister(rt);
+            print((int*) "=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+        }
+    }
+
+    if (interpret) {
+        pc = pc + 4;
+
+        if (*(registers+rs) == *(registers+rt)) {
+            pc = pc + signExtend(immediate) * 4;
+
+            if (signExtend(immediate) < 0) {
+                // keep track of number of loop iterations
+                loops = loops + 1;
+
+                *(loopsPerAddress + pc / 4) = *(loopsPerAddress + pc / 4) + 1;
+            }
+
+            // TODO: execute delay slot
+        }
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> $pc=");
+            print(itoa(pc, string_buffer, 16, 0, 0));
+        }
         println();
     }
 }
 
 void op_bne() {
-    pc = pc + 4;
-
-    if (*(registers+rs) != *(registers+rt)) {
-        pc = pc + signExtend(immediate) * 4;
-
-        // TODO: execute delay slot
-    }
-
-    if (debug_disassemble) {
+    if (debug) {
         printOpcode(opcode);
         print((int*) " ");
         printRegister(rs);
-        putchar(',');
+        print((int*) ",");
         printRegister(rt);
-        putchar(',');
+        print((int*) ",");
         print(itoa(signExtend(immediate), string_buffer, 10, 0, 0));
+        print((int*) "[");
+        print(itoa(pc + 4 + signExtend(immediate) * 4, string_buffer, 16, 0, 0));
+        print((int*) "]");
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rs);
+            print((int*) "=");
+            print(itoa(*(registers+rs), string_buffer, 10, 0, 0));
+            print((int*) ",");
+            printRegister(rt);
+            print((int*) "=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+        }
+    }
+
+    if (interpret) {
+        pc = pc + 4;
+
+        if (*(registers+rs) != *(registers+rt)) {
+            pc = pc + signExtend(immediate) * 4;
+
+            // TODO: execute delay slot
+        }
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> $pc=");
+            print(itoa(pc, string_buffer, 16, 0, 0));
+        }
         println();
     }
 }
 
 void op_addiu() {
-    *(registers+rt) = *(registers+rs) + signExtend(immediate);
-
-    // TODO: check for overflow
-
-    pc = pc + 4;
-
-    if (debug_disassemble) {
+    if (debug) {
         printOpcode(opcode);
         print((int*) " ");
         printRegister(rt);
-        putchar(',');
+        print((int*) ",");
         printRegister(rs);
-        putchar(',');
+        print((int*) ",");
         print(itoa(signExtend(immediate), string_buffer, 10, 0, 0));
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rt);
+            print((int*) "=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+            print((int*) ",");
+            printRegister(rs);
+            print((int*) "=");
+            print(itoa(*(registers+rs), string_buffer, 10, 0, 0));
+        }
+    }
+
+    if (interpret) {
+        *(registers+rt) = *(registers+rs) + signExtend(immediate);
+
+        // TODO: check for overflow
+
+        pc = pc + 4;
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> ");
+            printRegister(rt);
+            print((int*) "=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+        }
         println();
     }
 }
 
 void fct_jr() {
-    pc = *(registers+rs);
-
-    if (debug_disassemble) {
+    if (debug) {
         printFunction(function);
         print((int*) " ");
         printRegister(rs);
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rs);
+            print((int*) "=");
+            print(itoa(*(registers+rs), string_buffer, 16, 0, 0));
+        }
+    }
+
+    if (interpret)
+        pc = *(registers+rs);
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> $pc=");
+            print(itoa(pc, string_buffer, 16, 0, 0));
+        }
         println();
     }
 }
 
 void fct_mfhi() {
-    *(registers+rd) = reg_hi;
-
-    pc = pc + 4;
-
-    if (debug_disassemble) {
+    if (debug) {
         printFunction(function);
         print((int*) " ");
         printRegister(rd);
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rd);
+            print((int*) "=");
+            print(itoa(*(registers+rd), string_buffer, 10, 0, 0));
+            print((int*) ",$hi=");
+            print(itoa(reg_hi, string_buffer, 10, 0, 0));
+        }
+    }
+
+    if (interpret) {
+        *(registers+rd) = reg_hi;
+
+        pc = pc + 4;
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> ");
+            printRegister(rd);
+            print((int*) "=");
+            print(itoa(*(registers+rd), string_buffer, 10, 0, 0));
+        }
         println();
     }
 }
 
 void fct_mflo() {
-    *(registers+rd) = reg_lo;
-
-    pc = pc + 4;
-
-    if (debug_disassemble) {
+    if (debug) {
         printFunction(function);
         print((int*) " ");
         printRegister(rd);
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rd);
+            print((int*) "=");
+            print(itoa(*(registers+rd), string_buffer, 10, 0, 0));
+            print((int*) ",$lo=");
+            print(itoa(reg_lo, string_buffer, 10, 0, 0));
+        }
+    }
+
+    if (interpret) {
+        *(registers+rd) = reg_lo;
+
+        pc = pc + 4;
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> ");
+            printRegister(rd);
+            print((int*) "=");
+            print(itoa(*(registers+rd), string_buffer, 10, 0, 0));
+        }
         println();
     }
 }
 
 void fct_multu() {
-    // TODO: 64-bit resolution currently not supported
-    reg_lo = *(registers+rs) * *(registers+rt);
-
-    pc = pc + 4;
-
-    if (debug_disassemble) {
+    if (debug) {
         printFunction(function);
         print((int*) " ");
         printRegister(rs);
-        putchar(',');
+        print((int*) ",");
         printRegister(rt);
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rs);
+            print((int*) "=");
+            print(itoa(*(registers+rs), string_buffer, 10, 0, 0));
+            print((int*) ",");
+            printRegister(rt);
+            print((int*) "=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+            print((int*) ",$lo=");
+            print(itoa(reg_lo, string_buffer, 10, 0, 0));
+        }
+    }
+
+    if (interpret) {
+        // TODO: 64-bit resolution currently not supported
+        reg_lo = *(registers+rs) * *(registers+rt);
+
+        pc = pc + 4;
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> $lo=");
+            print(itoa(reg_lo, string_buffer, 10, 0, 0));
+        }
         println();
     }
 }
 
 void fct_divu() {
-    reg_lo = *(registers+rs) / *(registers+rt);
-    reg_hi = *(registers+rs) % *(registers+rt);
-
-    pc = pc + 4;
-
-    if (debug_disassemble) {
+    if (debug) {
         printFunction(function);
         print((int*) " ");
         printRegister(rs);
-        putchar(',');
+        print((int*) ",");
         printRegister(rt);
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rs);
+            print((int*) "=");
+            print(itoa(*(registers+rs), string_buffer, 10, 0, 0));
+            print((int*) ",");
+            printRegister(rt);
+            print((int*) "=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+            print((int*) ",$lo=");
+            print(itoa(reg_lo, string_buffer, 10, 0, 0));
+            print((int*) ",$hi=");
+            print(itoa(reg_hi, string_buffer, 10, 0, 0));
+        }
+    }
+
+    if (interpret) {
+        reg_lo = *(registers+rs) / *(registers+rt);
+        reg_hi = *(registers+rs) % *(registers+rt);
+
+        pc = pc + 4;
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> $lo=");
+            print(itoa(reg_lo, string_buffer, 10, 0, 0));
+            print((int*) ",$hi=");
+            print(itoa(reg_hi, string_buffer, 10, 0, 0));
+        }
         println();
     }
 }
 
 void fct_addu() {
-    *(registers+rd) = *(registers+rs) + *(registers+rt);
-
-    pc = pc + 4;
-
-    if (debug_disassemble) {
+    if (debug) {
         printFunction(function);
         print((int*) " ");
         printRegister(rd);
-        putchar(',');
+        print((int*) ",");
         printRegister(rs);
-        putchar(',');
+        print((int*) ",");
         printRegister(rt);
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rd);
+            print((int*) "=");
+            print(itoa(*(registers+rd), string_buffer, 10, 0, 0));
+            print((int*) ",");
+            printRegister(rs);
+            print((int*) "=");
+            print(itoa(*(registers+rs), string_buffer, 10, 0, 0));
+            print((int*) ",");
+            printRegister(rt);
+            print((int*) "=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+        }
+    }
+
+    if (interpret) {
+        *(registers+rd) = *(registers+rs) + *(registers+rt);
+
+        pc = pc + 4;
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> ");
+            printRegister(rd);
+            print((int*) "=");
+            print(itoa(*(registers+rd), string_buffer, 10, 0, 0));
+        }
         println();
     }
 }
 
 void fct_subu() {
-    *(registers+rd) = *(registers+rs) - *(registers+rt);
-
-    pc = pc + 4;
-
-    if (debug_disassemble) {
+    if (debug) {
         printFunction(function);
         print((int*) " ");
         printRegister(rd);
-        putchar(',');
+        print((int*) ",");
         printRegister(rs);
-        putchar(',');
+        print((int*) ",");
         printRegister(rt);
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rd);
+            print((int*) "=");
+            print(itoa(*(registers+rd), string_buffer, 10, 0, 0));
+            print((int*) ",");
+            printRegister(rs);
+            print((int*) "=");
+            print(itoa(*(registers+rs), string_buffer, 10, 0, 0));
+            print((int*) ",");
+            printRegister(rt);
+            print((int*) "=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+        }
+    }
+
+    if (interpret) {
+        *(registers+rd) = *(registers+rs) - *(registers+rt);
+
+        pc = pc + 4;
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> ");
+            printRegister(rd);
+            print((int*) "=");
+            print(itoa(*(registers+rd), string_buffer, 10, 0, 0));
+        }
         println();
     }
 }
@@ -4147,46 +4463,91 @@ void fct_subu() {
 void op_lw() {
     int vaddr;
 
-    vaddr = *(registers+rs) + signExtend(immediate);
-
-    *(registers+rt) = loadMemory(vaddr);
-
-    // keep track of number of loads
-    loads = loads + 1;
-
-    *(loadsPerAddress + pc / 4) = *(loadsPerAddress + pc / 4) + 1;
-
-    pc = pc + 4;
-
-    if (debug_disassemble) {
+    if (debug) {
         printOpcode(opcode);
         print((int*) " ");
         printRegister(rt);
-        putchar(',');
+        print((int*) ",");
         print(itoa(signExtend(immediate), string_buffer, 10, 0, 0));
-        putchar('(');
+        print((int*) "(");
         printRegister(rs);
-        putchar(')');
+        print((int*) ")");
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rt);
+            print((int*) "=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+            print((int*) ",");
+            printRegister(rs);
+            print((int*) "=");
+            print(itoa(*(registers+rs), string_buffer, 16, 0, 0));
+        }
+    }
+
+    if (interpret) {
+        vaddr = *(registers+rs) + signExtend(immediate);
+
+        *(registers+rt) = loadMemory(vaddr);
+
+        // keep track of number of loads
+        loads = loads + 1;
+
+        *(loadsPerAddress + pc / 4) = *(loadsPerAddress + pc / 4) + 1;
+
+        pc = pc + 4;
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> ");
+            printRegister(rt);
+            print((int*) "=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+            print((int*) "=memory[vaddr=");
+            print(itoa(vaddr, string_buffer, 16, 0, 0));
+            print((int*) "]");
+        }
         println();
     }
 }
 
 void fct_slt() {
-    if (*(registers+rs) < *(registers+rt))
-        *(registers+rd) = 1;
-    else
-        *(registers+rd) = 0;
-
-    pc = pc + 4;
-
-    if (debug_disassemble) {
+    if (debug) {
         printFunction(function);
         print((int*) " ");
         printRegister(rd);
-        putchar(',');
+        print((int*) ",");
         printRegister(rs);
-        putchar(',');
+        print((int*) ",");
         printRegister(rt);
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rs);
+            print((int*) "=");
+            print(itoa(*(registers+rs), string_buffer, 10, 0, 0));
+            print((int*) ",");
+            printRegister(rt);
+            print((int*) "=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+        }
+    }
+
+    if (interpret) {
+        if (*(registers+rs) < *(registers+rt))
+            *(registers+rd) = 1;
+        else
+            *(registers+rd) = 0;
+
+        pc = pc + 4;
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> ");
+            printRegister(rd);
+            print((int*) "=");
+            print(itoa(*(registers+rd), string_buffer, 10, 0, 0));
+        }
         println();
     }
 }
@@ -4194,44 +4555,81 @@ void fct_slt() {
 void op_sw() {
     int vaddr;
 
-    vaddr = *(registers+rs) + signExtend(immediate);
-
-    storeMemory(vaddr, *(registers+rt));
-
-    // keep track of number of stores
-    stores = stores + 1;
-
-    *(storesPerAddress + pc / 4) = *(storesPerAddress + pc / 4) + 1;
-
-    pc = pc + 4;
-
-    if (debug_disassemble) {
+    if (debug) {
         printOpcode(opcode);
         print((int*) " ");
         printRegister(rt);
-        putchar(',');
+        print((int*) ",");
         print(itoa(signExtend(immediate), string_buffer, 10, 0, 0));
-        putchar('(');
+        print((int*) "(");
         printRegister(rs);
-        putchar(')');
+        print((int*) ")");
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rt);
+            print((int*) "=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+            print((int*) ",");
+            printRegister(rs);
+            print((int*) "=");
+            print(itoa(*(registers+rs), string_buffer, 16, 0, 0));
+        }
+    }
+
+    if (interpret) {
+        vaddr = *(registers+rs) + signExtend(immediate);
+
+        storeMemory(vaddr, *(registers+rt));
+
+        // keep track of number of stores
+        stores = stores + 1;
+
+        *(storesPerAddress + pc / 4) = *(storesPerAddress + pc / 4) + 1;
+
+        pc = pc + 4;
+    }
+
+    if (debug) {
+        if (interpret) {
+            print((int*) " -> memory[vaddr=");
+            print(itoa(vaddr, string_buffer, 16, 0, 0));
+            print((int*) "]=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+            print((int*) "=");
+            printRegister(rt);
+        }
         println();
     }
 }
 
 void fct_teq() {
-    if (*(registers+rs) == *(registers+rt))
-        exception_handler(EXCEPTION_SIGNAL);
-
-    pc = pc + 4;
-
-    if (debug_disassemble) {
+    if (debug) {
         printFunction(function);
         print((int*) " ");
         printRegister(rs);
-        putchar(',');
+        print((int*) ",");
         printRegister(rt);
-        println();
+        if (interpret) {
+            print((int*) ": ");
+            printRegister(rs);
+            print((int*) "=");
+            print(itoa(*(registers+rs), string_buffer, 10, 0, 0));
+            print((int*) ",");
+            printRegister(rt);
+            print((int*) "=");
+            print(itoa(*(registers+rt), string_buffer, 10, 0, 0));
+        }
     }
+
+    if (interpret) {
+        if (*(registers+rs) == *(registers+rt))
+            exception_handler(EXCEPTION_SIGNAL);
+
+        pc = pc + 4;
+    }
+
+    if (debug)
+        println();
 }
 
 // -----------------------------------------------------------------
@@ -4251,40 +4649,31 @@ void exception_handler(int enumber) {
     exit(enumber);
 }
 
-void pre_debug() {
-    if (debug_disassemble) {
-        print(binaryName);
-        print((int*) ": $pc=");
-        print(itoa(pc, string_buffer, 16, 8, 0));
-        print((int*) ": ");
-    }
-}
-
-void post_debug() {
-    int i;
-    if (debug_registers) {
-        i = 0;
-
-        while (i < 32) {
-            if (*(registers+i) != 0) {
-                print(binaryName);
-                print((int*) ": ");
-                printRegister(i);
-                putchar(CHAR_EQUAL);
-                print(itoa(*(registers+i), string_buffer, 16, 8, 0));
-                println();
-            }
-            i = i + 1;
-        }
-        println();
-    }
-}
-
 void fetch() {
     ir = loadMemory(pc);
 }
 
 void execute() {
+    if (debug)
+        if (sourceLineNumber != (int*) 0) {
+            print(binaryName);
+            print((int*) ": ");
+        }
+
+    if (interpret)
+        if (debug)
+            print((int*) "$pc=");
+
+    if (debug) {
+        print(itoa(pc, string_buffer, 16, 8, 0));
+        if (sourceLineNumber != (int*) 0) {
+            print((int*) "(~");
+            print(itoa(*(sourceLineNumber + pc / 4), string_buffer, 10, 0, 0));
+            print((int*) ")");
+        }
+        print((int*) ": ");
+    }
+
     if (opcode == OP_SPECIAL) {
         if (function == FCT_NOP) {
             fct_nop();
@@ -4328,6 +4717,13 @@ void execute() {
     } else {
         exception_handler(EXCEPTION_UNKNOWNINSTRUCTION);
     }
+
+    if (interpret == 0) {
+        if (pc == codeLength - 4)
+            halt = 1;
+        else
+            pc = pc + 4;
+    }
 }
 
 void run() {
@@ -4336,17 +4732,14 @@ void run() {
     while (halt == 0) {
         fetch();
         decode();
-        pre_debug();
         execute();
-        post_debug();
     }
 
     halt = 0;
-}
 
-// -----------------------------------------------------------------
-// ----------------------------- MAIN ------------------------------
-// -----------------------------------------------------------------
+    interpret = 0;
+    debug     = 0;
+}
 
 void up_push(int value) {
     int vaddr;
@@ -4382,6 +4775,7 @@ int up_copyString(int *s) {
     w = a + l;
 
     if (l % 4 != 0)
+        // making sure w is a multiple of 4 bytes
         w = w + 4 - l % 4;
 
     t = a;
@@ -4455,10 +4849,15 @@ int addressWithMaxCounter(int *counters, int max) {
 }
 
 int fixedPointRatio(int a, int b) {
+    // assert: a >= b
     int r;
 
+    // compute fixed point ratio r with 2 fractional digits
+    
     r = 0;
     
+    // multiply a/b with 100 but avoid overflow
+
     if (a <= INT_MAX / 100) {
         if (b != 0)
             r = a * 100 / b;
@@ -4469,6 +4868,9 @@ int fixedPointRatio(int a, int b) {
         if (b / 100 != 0)
             r = a / (b / 100);
     }
+
+    // compute a/b in percent
+    // 1000000 = 10000 (for 100.00%) * 100 (for 2 fractional digits of r)
 
     if (r != 0)
         return 1000000 / r;
@@ -4490,7 +4892,7 @@ int printCounters(int total, int *counters, int max) {
     if (*(counters + a / 4) != 0) {
         print((int*) "@");
         print(itoa(a, string_buffer, 16, 8, 0));
-        if (sourceLineNumber != (int*) 0){
+        if (sourceLineNumber != (int*) 0) {
             print((int*) "(~");
             print(itoa(*(sourceLineNumber + a / 4), string_buffer, 10, 0, 0));
             print((int*) ")");
@@ -4508,13 +4910,46 @@ void printProfile(int *message, int total, int *counters) {
         print(message);
         print(itoa(total, string_buffer, 10, 0, 0));
         print((int*) ",");
-        a = printCounters(total, counters, INT_MAX);
+        a = printCounters(total, counters, INT_MAX); // max counter
         print((int*) ",");
-        a = printCounters(total, counters, *(counters + a / 4));
+        a = printCounters(total, counters, *(counters + a / 4)); // 2nd max
         print((int*) ",");
-        a = printCounters(total, counters, *(counters + a / 4));
+        a = printCounters(total, counters, *(counters + a / 4)); // 3rd max
         println();
     }
+}
+
+void disassemble() {
+    assemblyFD = open(assemblyName, O_CREAT_WRONLY_TRUNC, S_IRUSR_IWUSR_IRGRP_IROTH);
+
+    if (assemblyFD < 0) {
+        print(selfieName);
+        print((int*) ": could not create assembly output file ");
+        print(assemblyName);
+        println();
+
+        exit(-1);
+    }
+
+    print(selfieName);
+    print((int*) ": writing assembly into output file ");
+    print(assemblyName);
+    println();
+
+    outputName = assemblyName;
+    outputFD   = assemblyFD;
+
+    interpret = 0;
+    debug     = 1;
+
+    copyBinaryToMemory();
+    
+    resetInterpreter();
+
+    run();
+
+    outputName = (int*) 0;
+    outputFD   = 1;
 }
 
 void emulate(int argc, int *argv) {
@@ -4526,13 +4961,17 @@ void emulate(int argc, int *argv) {
     print((int*) "MB of memory");
     println();
 
+    interpret = 1;
+
     copyBinaryToMemory();
 
     resetInterpreter();
 
-    *(registers+REG_SP) = memorySize - 4;
-    *(registers+REG_GP) = binaryLength;
-    *(registers+REG_K1) = *(registers+REG_GP);
+    *(registers+REG_SP) = memorySize - 4; // initialize stack pointer
+
+    *(registers+REG_GP) = binaryLength; // initialize global pointer
+
+    *(registers+REG_K1) = *(registers+REG_GP); // initialize bump pointer
 
     up_copyArguments(argc, argv);
 
@@ -4583,6 +5022,22 @@ int selfie(int argc, int* argv) {
                     print(binaryName);
                     println();
                 }
+            } else if (stringCompare((int*) *argv, (int*) "-s")) {
+                assemblyName = (int*) *(argv+1);
+
+                argc = argc - 2;
+                argv = argv + 2;
+
+                if (binaryLength > 0) {
+                    initMemory(binaryLength);
+
+                    disassemble();
+                } else {
+                    print(selfieName);
+                    print((int*) ": nothing to disassemble to output file ");
+                    print(assemblyName);
+                    println();
+                }
             } else if (stringCompare((int*) *argv, (int*) "-l")) {
                 binaryName = (int*) *(argv+1);
 
@@ -4591,7 +5046,7 @@ int selfie(int argc, int* argv) {
 
                 load();
             } else if (stringCompare((int*) *argv, (int*) "-m")) {
-                initMemory(atoi((int*) *(argv+1)));
+                initMemory(atoi((int*) *(argv+1)) * MEGABYTE);
 
                 argc = argc - 1;
                 argv = argv + 1;
@@ -4599,11 +5054,35 @@ int selfie(int argc, int* argv) {
                 // pass binaryName as first argument replacing size
                 *argv = (int) binaryName;
 
-                if (binaryLength > 0)
+                if (binaryLength > 0) {
+                    debug = 0;
+
                     emulate(argc, argv);
-                else {
+                } else {
                     print(selfieName);
                     print((int*) ": nothing to emulate");
+                    println();
+
+                    exit(-1);
+                }
+
+                return 0;
+            } else if (stringCompare((int*) *argv, (int*) "-d")) {
+                initMemory(atoi((int*) *(argv+1)) * MEGABYTE);
+
+                argc = argc - 1;
+                argv = argv + 1;
+
+                // pass binaryName as first argument replacing size
+                *argv = (int) binaryName;
+
+                if (binaryLength > 0) {
+                    debug = 1;
+
+                    emulate(argc, argv);
+                } else {
+                    print(selfieName);
+                    print((int*) ": nothing to debug");
                     println();
 
                     exit(-1);
@@ -4641,7 +5120,7 @@ int main(int argc, int *argv) {
 
     if (selfie(argc, (int*) argv) != 0) {
         print(selfieName);
-        print((int*) ": usage: selfie { -c source | -o binary | -l binary } [ -m size ... | -k size ... ] ");
+        print((int*) ": usage: selfie { -c source | -o binary | -s assembly | -l binary } [ -m size ... | -d size ... | -k size ... ] ");
         println();
     }
 }
