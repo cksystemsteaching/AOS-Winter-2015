@@ -330,11 +330,15 @@ void kernel_run();
 void kernel_load_executable(int pid, int segment_size, int *filename);
 int  *kernel_schedule_process();
 void kernel_switch_to_process(int *process);
+void kernel_lock_take(int *lock, int *process);
+void kernel_unlock(int *lock);
+void kernel_push_and_schedule();
 
 // -----------------------------------------------------------------
 // ----------------------------- DEBUG -----------------------------
 // -----------------------------------------------------------------
 
+int DEBUG_KERNEL;
 int DEBUG_1;
 int DEBUG_2;
 int DEBUG_3;
@@ -355,8 +359,6 @@ void lock_set_blockedqueue(int *lock, int *blockedqueue);
 void lock_blockqueue_push(int *lock, int *process);
 int  *lock_blockqueue_pop(int *lock);
 int  lock_blockedqueue_is_empty(int *lock);
-
-int  lock_take(int *lock, int *process);
 
 // -----------------------------------------------------------------
 // ----------------------------- STRUCT ----------------------------
@@ -863,9 +865,11 @@ void syscall_sched_yield();
 // -------------------------- ASSIGNMENT3 --------------------------
 // -----------------------------------------------------------------
 
+// Load a process into memory
 void emitAlarm();
 void syscall_alarm();
 
+// Select the next process to run
 void emitSelect();
 void syscall_select();
 
@@ -882,6 +886,7 @@ void syscall_munlock();
 void emitGetpid();
 void syscall_getpid();
 
+// Get the kernel mode
 void emitSignal();
 void syscall_signal();
 
@@ -4325,14 +4330,14 @@ void kernel_run() {
         action = signal();
 
         if(action == KERNEL_SCHEDULE) {
-            if(process_get_id(g_running_process) > 0)
-                list_push_back(g_readyqueue, g_running_process);
-            kernel_switch_to_process(kernel_schedule_process());
+            kernel_push_and_schedule();
         } else if(action == KERNEL_LOCK) {
-            lock_take(g_lock, g_running_process);
-            kernel_switch_to_process(kernel_schedule_process());
+            kernel_lock_take(g_lock, g_running_process);
+            //kernel_switch_to_process(kernel_schedule_process());
         } else if(action == KERNEL_UNLOCK) {
-            
+            kernel_unlock(g_lock);
+            // Reschedule after unlock
+            kernel_switch_to_process(g_running_process);
         }
     }
 }
@@ -4356,24 +4361,105 @@ int *kernel_schedule_process() {
 }
 
 void kernel_switch_to_process(int *process) {
-
-    // print((int*)"switch!");
-    // println();
-
-    // print((int*)"readyqueue:");
-    // println();
-    // print_process_list(g_readyqueue);
-
-    // print((int*)"blockedqueue:");
-    // println();
-    //print_process_list(lock_get_blockedqueue(g_lock));
-    
-    // print((int*)"running process: ");
-    // printInt(process_get_id(process));
-    // println();
-    
     g_running_process = process;
+
+    if(DEBUG_KERNEL) {
+        print((int*) "running process pid: ");
+        printInt(process_get_id(g_running_process));
+        println();
+    }
+
     select(0, process_get_id(process));
+}
+
+void kernel_push_and_schedule() {
+    if(process_get_id(g_running_process) > 0)
+        list_push_back(g_readyqueue, g_running_process);
+    kernel_switch_to_process(kernel_schedule_process());
+}
+
+void kernel_lock_take(int *lock, int *process) {
+
+    if(DEBUG_KERNEL) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*) "lock take");
+        println();
+
+        print((int*) "pid: ");
+        printInt(process_get_id(g_running_process));
+        println();
+    }
+
+    if(lock_is_taken(lock)) {
+
+        if(DEBUG_KERNEL) {
+            print((int*) "lock is taken");
+            println();
+        }
+
+        lock_blockqueue_push(lock, process);
+        process_set_state(process, PROCESS_BLOCKED);
+        // Reschedule
+        kernel_switch_to_process(kernel_schedule_process());
+
+        return;
+    }
+
+    if(DEBUG_KERNEL) {
+        print((int*) "lock was not taken");
+        println();
+    }
+
+    // The process now owns the lock
+    lock_set_process(lock, process);
+    // Continue with the running process;
+    kernel_switch_to_process(g_running_process);
+}
+
+void kernel_unlock(int *lock) {
+    int *blockedqueue;
+    int *process;
+    int *owner;
+    int size;
+    int i;
+
+    owner = lock_get_process(g_lock);
+
+    // Quit if the process doesn't own the lock
+    if(owner != g_running_process)
+        return;
+
+    if(DEBUG_KERNEL) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*) "unlock");
+        println();
+
+        print((int*) "pid: ");
+        printInt(process_get_id(g_running_process));
+        println();
+    }
+
+    blockedqueue = lock_get_blockedqueue(lock);
+    lock_set_process(lock, (int*)0);
+
+    if(list_is_empty(blockedqueue))
+        return;
+
+    size = list_get_size(blockedqueue);
+
+    i = 0;
+    while(i < size) {
+        process = list_entry_get_data(lock_blockqueue_pop(lock));
+        process_set_state(process, PROCESS_READY);
+        list_push_back(g_readyqueue, process);
+        i = i + 1;
+    }
+
+    lock_set_blockedqueue(lock, list_init());
 }
 
 // -----------------------------------------------------------------
@@ -4426,37 +4512,6 @@ int *lock_blockqueue_pop(int *lock) {
 
 int lock_blockedqueue_is_empty(int *lock) {
     return list_is_empty(lock_get_blockedqueue(lock));
-}
-
-int lock_take(int *lock, int *process) {
-    int pid;
-
-    //print((int*)"lock take!");
-    //println();
-
-    if(lock_is_taken(lock)) {
-        pid = process_get_id(process);
-        lock_blockqueue_push(lock, process);
-        list_remove_entry_by(g_readyqueue, pid, 0);
-        process_set_state(process, PROCESS_BLOCKED);
-
-        // print((int*)"pid:");
-        // printInt(pid);
-        // println();
-
-        // print((int*)"readyqueue:");
-        // println();
-        // print_process_list(g_readyqueue);
-
-        // print((int*)"blockedqueue:");
-        // println();
-        // print_process_list(lock_get_blockedqueue(g_lock));
-
-        return 0;
-    }
-    
-    lock_set_process(lock, process);
-    return 1;
 }
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -6129,6 +6184,7 @@ int selfie(int argc, int* argv) {
 }
 
 int main(int argc, int *argv) {
+    DEBUG_KERNEL = 0;
     DEBUG_1 = 0;
     DEBUG_2 = 0;
     DEBUG_3 = 0;

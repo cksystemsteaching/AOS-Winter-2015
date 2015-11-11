@@ -5865,6 +5865,8 @@ void list_test() {
     
     list = list_init();
     
+    mlock();
+
     print((int*) "push front 1");
     println();
     list_push_front(list, process);
@@ -5878,8 +5880,6 @@ void list_test() {
     print_process_list(list);
 
     process = process_init(2, registers, 0, 0, 0);
-
-    mlock();
 
     print((int*) "push front 2");
     println();
@@ -5908,6 +5908,8 @@ void list_test() {
     print_process_list(list);
 
     process = process_init(5, registers, 0, 0, 0);
+
+    munlock();
     
     print((int*) "push front 5");
     println();
@@ -5930,6 +5932,8 @@ void list_test() {
 
     process = process_init(7, registers, 0, 0, 0);
     
+    mlock();
+
     print((int*) "insert 7 at 0");
     println();
     list_insert_at(list, 0, process);
@@ -5951,6 +5955,8 @@ void list_test() {
     println();
     list_swap(list, 0, 4);
     print_process_list(list);
+
+    munlock();
 
     print((int*) "remove at 3 -> ");
     data = list_entry_get_data(list_remove_at(list, 3));
