@@ -4333,10 +4333,8 @@ void kernel_run() {
             kernel_push_and_schedule();
         } else if(action == KERNEL_LOCK) {
             kernel_lock_take(g_lock, g_running_process);
-            //kernel_switch_to_process(kernel_schedule_process());
         } else if(action == KERNEL_UNLOCK) {
             kernel_unlock(g_lock);
-            // Reschedule after unlock
             kernel_switch_to_process(g_running_process);
         }
     }
