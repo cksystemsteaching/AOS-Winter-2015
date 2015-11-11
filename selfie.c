@@ -31,9 +31,9 @@
 // into the emulator. Selfie is meant to be extended in numerous ways.
 //
 // C* is a tiny Turing-complete subset of C that includes dereferencing
-// (the * operator) but excludes data structures, Boolean expressions, and
-// many other features. There are only signed 32-bit integers and pointers,
-// and character constants for constructing word-aligned strings manually.
+// (the * operator) but excludes data structures, bitwise and Boolean
+// operators, and many other features. There are only signed 32-bit
+// integers and pointers as well as character and string constants.
 // This choice turns out to be helpful for students to understand the
 // true role of composite data structures such as arrays and records.
 // Bitwise operations are implemented in libcstar using signed integer
@@ -63,6 +63,8 @@
 // The design of the compiler is inspired by the Oberon compiler of
 // Professor Niklaus Wirth from ETH Zurich.
 
+int *selfieName = (int*) 0;
+
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
 // ---------------------     L I B R A R Y     ---------------------
@@ -84,7 +86,7 @@ void stringReverse(int *s);
 int  stringCompare(int *s, int *t);
 
 int  atoi(int *s);
-int* itoa(int n, int *s, int b, int a);
+int* itoa(int n, int *s, int b, int a, int p);
 
 void print(int *s);
 void println();
@@ -165,12 +167,15 @@ void initLibrary() {
 // -----------------------------------------------------------------
 
 void initScanner();
+void resetScanner();
 
 void printSymbol(int symbol);
 void printLineNumber(int* message);
 
 void syntaxErrorMessage(int *message);
 void syntaxErrorCharacter(int character);
+
+void getCharacter();
 
 int isCharacterWhitespace();
 int findNextCharacter();
@@ -180,6 +185,7 @@ int isCharacterLetterOrDigitOrUnderscore();
 int isNotDoubleQuoteOrEOF();
 int identifierStringMatch(int stringIndex);
 int identifierOrKeyword();
+
 int getSymbol();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
@@ -216,9 +222,11 @@ int SYM_STRING       = 27; // string
 
 int *SYMBOLS; // array of strings representing symbols
 
+int *character_buffer; // buffer for reading characters
+
 int maxIdentifierLength = 64; // maximum number of characters in an identifier
 int maxIntegerLength    = 10; // maximum number of characters in an integer
-int maxStringLength     = 64; // maximum number of characters in a string
+int maxStringLength     = 128; // maximum number of characters in a string
 
 // ------------------------ GLOBAL VARIABLES -----------------------
 
@@ -237,7 +245,54 @@ int isINTMINConstant    = 0;
 
 int character; // most recently read character
 int symbol;    // most recently recognized symbol
-int testvar;
+
+int *sourceName = (int*) 0; // name of source file
+int sourceFD    = 0;        // file descriptor of source file
+
+
+// ------------------------ OWN GLOBAL VARIABLES -----------------------------------
+// ready queue
+int* ready_queue;
+// process list
+int* process_list;
+// number of instructions for one process in one run
+int numb_of_instr;
+// Size of Segment
+int segment_size;
+// Address of the actual running process
+int* running_process;
+// Address of the kernel process
+int* kernel_process;
+// Segmentation Table
+int* segmentation_table;
+// Number of ticks each Process can run
+int ticks;
+// Number of Processes
+int number_of_processes;
+// Number of Processes plus the kernel-process
+int all_processes;
+// id of the running process
+int running_process_id;
+// Interrupt Handling;
+int booting;
+
+int* prev_node;
+int* prev_process;
+int* next_node;
+int* next_process;
+
+void create_ready_queue(int n, int m);
+int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo, int segment_number);
+void create_segmentation_table(int segments);
+int* initializeList(int *list);
+int* addToList(int *list, int data);
+void printListPID(int *list);
+void printListPC(int *list);
+void printListSegment(int *list);
+int sizeOfList(int *list);
+int getNodeFromList(int *list, int nthNode);
+int* deleteFirstNodeFromList(int *list);
+int* getNodeByIdFromProcessList(int id);
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -273,13 +328,24 @@ void initScanner () {
     *(SYMBOLS + SYM_CHARACTER)    = (int) "character";
     *(SYMBOLS + SYM_STRING)       = (int) "string";
 
-    character  = getchar();
-    symbol     = SYM_EOF;
+    character_buffer = malloc(1);
+
+    character = CHAR_EOF;
+    symbol    = SYM_EOF;
+}
+
+void resetScanner() {
+    lineNumber = 1;
+
+    getCharacter();
+    getSymbol();
 }
 
 // -----------------------------------------------------------------
 // ------------------------- SYMBOL TABLE --------------------------
 // -----------------------------------------------------------------
+
+void resetGlobalSymbolTable();
 
 void createSymbolTableEntry(int which, int *string, int data, int class, int type, int value);
 int* getSymbolTableEntry(int *string, int class, int *symbol_table);
@@ -322,11 +388,15 @@ int LOCAL_TABLE  = 2;
 int *global_symbol_table = (int*) 0;
 int *local_symbol_table  = (int*) 0;
 
+// ------------------------- INITIALIZATION ------------------------
+
+void resetGlobalSymbolTable() {
+    global_symbol_table = (int*) 0;
+}
+
 // -----------------------------------------------------------------
 // ---------------------------- PARSER -----------------------------
 // -----------------------------------------------------------------
-
-void initParser();
 
 int isNotRbraceOrEOF();
 int isExpression();
@@ -370,10 +440,6 @@ void gr_initialization(int *name, int offset, int type);
 void gr_procedure(int *procedure, int returnType);
 void gr_cstar();
 
-// ------------------------ GLOBAL CONSTANTS -----------------------
-
-int maxBinaryLength;
-
 // ------------------------ GLOBAL VARIABLES -----------------------
 
 int allocatedTemporaries = 0; // number of allocated temporaries
@@ -385,20 +451,18 @@ int returnBranches  = 0; // fixup chain for return statements
 
 int *currentProcedureName = (int*) 0; // name of currently parsed procedure
 
-// ------------------------- INITIALIZATION ------------------------
-
-void
-initParser() {
-    // set maximum code length in bytes for emitting code
-    maxBinaryLength = twoToThePowerOf(17);
-}
-
 // -----------------------------------------------------------------
 // ---------------------- MACHINE CODE LIBRARY ---------------------
 // -----------------------------------------------------------------
 
 void emitLeftShiftBy(int b);
 void emitMainEntry();
+
+// -----------------------------------------------------------------
+// ----------------------------- MAIN ------------------------------
+// -----------------------------------------------------------------
+
+void compile();
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -588,37 +652,13 @@ void initDecoder() {
 }
 
 // -----------------------------------------------------------------
-// ---------------------------- MEMORY -----------------------------
-// -----------------------------------------------------------------
-
-void initMemory(int size, int* name);
-
-int tlb(int vaddr);
-
-int  loadMemory(int vaddr);
-void storeMemory(int vaddr, int data);
-
-// ------------------------ GLOBAL VARIABLES -----------------------
-
-int *memory;
-int  memorySize;
-
-int *binaryName;
-int  binaryLength;
-
-// ------------------------- INITIALIZATION ------------------------
-
-void initMemory(int size, int *name) {
-    memory     = malloc(size);
-    memorySize = size;
-
-    binaryName   = name;
-    binaryLength = 0;
-}
-
-// -----------------------------------------------------------------
 // ---------------------------- BINARY -----------------------------
 // -----------------------------------------------------------------
+
+int  loadBinary(int addr);
+void storeBinary(int addr, int instruction);
+
+void storeInstruction(int addr, int instruction);
 
 void emitInstruction(int instruction);
 void emitRFormat(int opcode, int rs, int rt, int rd, int function);
@@ -629,10 +669,25 @@ void fixup_relative(int fromAddress);
 void fixup_absolute(int fromAddress, int toAddress);
 void fixlink_absolute(int fromAddress, int toAddress);
 
-int copyStringToMemory(int *s, int a);
+int copyStringToBinary(int *s, int a);
 
-void emitBinary();
-void loadBinary();
+void emitGlobalsStrings();
+
+void emit();
+void load();
+
+// ------------------------ GLOBAL CONSTANTS -----------------------
+
+int maxBinaryLength = 131072; // 128KB
+
+// ------------------------ GLOBAL VARIABLES -----------------------
+
+int *binary       = (int*) 0;
+int  binaryLength = 0;
+
+int *binaryName   = (int*) 0;
+
+int *sourceLineNumber = (int*) 0;
 
 // -----------------------------------------------------------------
 // --------------------------- SYSCALLS ----------------------------
@@ -653,29 +708,61 @@ void syscall_open();
 void emitMalloc();
 void syscall_malloc();
 
-void emitGetchar();
-void syscall_getchar();
-
 void emitPutchar();
 
 void emitYield();
 void syscall_yield();
 
+void emitSwitchEmu();
+void syscall_switchEmu();
+
+void emitSwitchOS();
+void syscall_switchOS();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
-int SYSCALL_EXIT    = 4001;
-int SYSCALL_READ    = 4003;
-int SYSCALL_WRITE   = 4004;
-int SYSCALL_OPEN    = 4005;
-int SYSCALL_MALLOC  = 5001;
-int SYSCALL_GETCHAR = 5002;
-int SYSCALL_YIELD   = 5003;
+int SYSCALL_EXIT    	= 4001;
+int SYSCALL_READ    	= 4003;
+int SYSCALL_WRITE   	= 4004;
+int SYSCALL_OPEN    	= 4005;
+int SYSCALL_MALLOC  	= 5001;
+int SYSCALL_YIELD   	= 5003;
+int SYSCALL_SWITCH_EMU 	= 5004;
+int SYSCALL_SWITCH_OS	= 5005;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
 // ---------------------     E M U L A T O R   ---------------------
 // -----------------------------------------------------------------
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
+
+// -----------------------------------------------------------------
+// ---------------------------- MEMORY -----------------------------
+// -----------------------------------------------------------------
+
+void initMemory(int megabytes);
+
+int tlb(int vaddr);
+
+int  loadMemory(int vaddr);
+void storeMemory(int vaddr, int data);
+
+// ------------------------ GLOBAL VARIABLES -----------------------
+
+int  memorySize = 0;
+int *memory     = (int*) 0;
+
+// ------------------------- INITIALIZATION ------------------------
+
+void initMemory(int megabytes) {
+    if (megabytes < 0)
+        megabytes = 64;
+    else if (megabytes > 1024)
+        megabytes = 1024;
+
+    memorySize = megabytes * 1024 * 1024;
+    memory     = malloc(memorySize);
+}
 
 // -----------------------------------------------------------------
 // ------------------------- INSTRUCTIONS --------------------------
@@ -689,7 +776,6 @@ void op_beq();
 void op_bne();
 void op_addiu();
 void fct_jr();
-void op_lui();
 void fct_mfhi();
 void fct_mflo();
 void fct_multu();
@@ -706,6 +792,7 @@ void op_teq();
 // -----------------------------------------------------------------
 
 void initInterpreter();
+void resetInterpreter();
 
 void printException(int enumber);
 
@@ -716,26 +803,38 @@ void post_debug();
 
 void fetch();
 void execute();
-void run();
+void run(int argc, int* argv);
 
-void parse_args(int argc, int *argv);
+// -----------------------------------------------------------------
+// ----------------------------- MAIN ------------------------------
+// -----------------------------------------------------------------
 
 void up_push(int value);
 int  up_malloc(int size);
+int  up_copyString(int *s);
 void up_copyArguments(int argc, int *argv);
 
-int main_emulator(int argc, int *argv);
+void copyBinaryToMemory();
+
+int addressWithMaxCounter(int *counters, int max);
+int fixedPointRatio(int a, int b);
+
+int  printCounters(int total, int *counters, int max);
+void printProfile(int *message, int total, int *counters);
+
+void emulate(int argc, int* argv);
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int debug_load = 0;
 
-int debug_read    = 0;
-int debug_write   = 0;
-int debug_open    = 0;
-int debug_malloc  = 0;
-int debug_getchar = 0;
-int debug_yield   = 1;
+int debug_read    	= 0;
+int debug_write   	= 0;
+int debug_open    	= 0;
+int debug_malloc  	= 0;
+int debug_yield   	= 1;
+int debug_switch_emu 	= 1;
+int debug_switch_os	= 1;
 
 int debug_registers   = 0;
 int debug_disassemble = 0;
@@ -759,6 +858,20 @@ int ir = 0; // instruction record
 int reg_hi = 0; // hi register for multiplication/division
 int reg_lo = 0; // lo register for multiplication/division
 
+int halt = 0; // flag for halting mipster
+
+int calls            = 0;
+int *callsPerAddress = (int*) 0;
+
+int loops            = 0;
+int *loopsPerAddress = (int*) 0;
+
+int loads            = 0;
+int *loadsPerAddress = (int*) 0;
+
+int stores            = 0;
+int *storesPerAddress = (int*) 0;
+
 // ------------------------- INITIALIZATION ------------------------
 
 void initInterpreter() {
@@ -772,6 +885,25 @@ void initInterpreter() {
     *(EXCEPTIONS + EXCEPTION_UNKNOWNFUNCTION)    = (int) "unknown function";
 
     registers = malloc(32*4);
+}
+
+void resetInterpreter() {
+    pc = 0;
+
+    reg_hi = 0;
+    reg_lo = 0;
+
+    calls           = 0;
+    callsPerAddress = malloc(maxBinaryLength);
+
+    loops           = 0;
+    loopsPerAddress = malloc(maxBinaryLength);
+
+    loads           = 0;
+    loadsPerAddress = malloc(maxBinaryLength);
+
+    stores           = 0;
+    storesPerAddress = malloc(maxBinaryLength);
 }
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -811,7 +943,7 @@ int rightShift(int n, int b) {
             (INT_MAX / twoToThePowerOf(b) + 1);
 }
 
-int getCharacter(int *s, int i) {
+int loadCharacter(int *s, int i) {
     // assert: i >= 0
     int a;
 
@@ -820,13 +952,13 @@ int getCharacter(int *s, int i) {
     return rightShift(leftShift(*(s + a), 24 - (i % 4) * 8), 24);
 }
 
-int* putCharacter(int *s, int i, int c) {
+int* storeCharacter(int *s, int i, int c) {
     // assert: i >= 0, all characters are 7-bit
     int a;
 
     a = i / 4;
 
-    *(s + a) = (*(s + a) - leftShift(getCharacter(s, i), (i % 4) * 8)) + leftShift(c, (i % 4) * 8);
+    *(s + a) = (*(s + a) - leftShift(loadCharacter(s, i), (i % 4) * 8)) + leftShift(c, (i % 4) * 8);
 
     return s;
 }
@@ -836,7 +968,7 @@ int stringLength(int *s) {
 
     i = 0;
 
-    while (getCharacter(s, i) != 0)
+    while (loadCharacter(s, i) != 0)
         i = i + 1;
 
     return i;
@@ -851,10 +983,10 @@ void stringReverse(int *s) {
     j = stringLength(s) - 1;
 
     while (i < j) {
-        tmp = getCharacter(s, i);
+        tmp = loadCharacter(s, i);
 
-        putCharacter(s, i, getCharacter(s, j));
-        putCharacter(s, j, tmp);
+        storeCharacter(s, i, loadCharacter(s, j));
+        storeCharacter(s, j, tmp);
 
         i = i + 1;
         j = j - 1;
@@ -867,12 +999,12 @@ int stringCompare(int *s, int *t) {
     i = 0;
 
     while (1)
-        if (getCharacter(s, i) == 0)
-            if (getCharacter(t, i) == 0)
+        if (loadCharacter(s, i) == 0)
+            if (loadCharacter(t, i) == 0)
                 return 1;
             else
                 return 0;
-        else if (getCharacter(s, i) == getCharacter(t, i))
+        else if (loadCharacter(s, i) == loadCharacter(t, i))
             i = i + 1;
         else
             return 0;
@@ -881,32 +1013,54 @@ int stringCompare(int *s, int *t) {
 int atoi(int *s) {
     int i;
     int n;
+    int c;
 
     i = 0;
 
     n = 0;
 
-    while (getCharacter(s, i) != 0) {
-        n = n * 10 + getCharacter(s, i) - '0';
+    c = loadCharacter(s, i);
+
+    while (c != 0) {
+        c = c - '0';
+
+        if (c < 0)
+            return -1;
+        else if (c > 9)
+            return -1;
+
+        n = n * 10 + c;
 
         i = i + 1;
+
+        c = loadCharacter(s, i);
+
+        if (n < 0) {
+            if (n != INT_MIN)
+                return -1;
+            else if (c != 0)
+                return -1;
+        }
     }
 
     return n;
 }
 
-int* itoa(int n, int *s, int b, int a) {
+int* itoa(int n, int *s, int b, int a, int p) {
     // assert: b in {2,4,8,10,16}
 
     int i;
     int sign;
+    int msb;
 
     i = 0;
 
     sign = 0;
 
+    msb = 0;
+
     if (n == 0) {
-        putCharacter(s, 0, '0');
+        storeCharacter(s, 0, '0');
 
         i = 1;
     } else if (n < 0) {
@@ -915,61 +1069,96 @@ int* itoa(int n, int *s, int b, int a) {
         if (b == 10) {
             if (n == INT_MIN) {
                 // rightmost decimal digit of 32-bit INT_MIN
-                putCharacter(s, 0, '8');
+                storeCharacter(s, 0, '8');
 
                 n = -(n / 10);
-                i = i + 1;
+                i = 1;
             } else
                 n = -n;
         } else {
             if (n == INT_MIN) {
                 // rightmost non-decimal digit of INT_MIN
-                putCharacter(s, 0, '0');
+                storeCharacter(s, 0, '0');
 
                 n = (rightShift(INT_MIN, 1) / b) * 2;
-                i = i + 1;
-            } else
-                n = rightShift(leftShift(n, 1), 1);
-        }
-    }
-
-    while (n != 0) {
-        if (n % b > 9)
-            putCharacter(s, i, n % b - 10 + 'A');
-        else
-            putCharacter(s, i, n % b + '0');
-
-        n = n / b;
-        i = i + 1;
-
-        if (i == 1) {
-            if (sign) {
-                if (b != 10)
-                    n = n + (rightShift(INT_MIN, 1) / b) * 2;
+                i = 1;
+            } else {
+                n   = rightShift(leftShift(n, 1), 1);
+                msb = 1;
             }
         }
     }
 
-    if (b != 10) {
-        while (i < a) {
-            putCharacter(s, i, '0'); // align with zeros
+    while (n != 0) {
+        if (p > 0)
+            if (i == p) {
+                storeCharacter(s, i, '.');
+
+                i = i + 1;
+                p = 0;
+            }
+
+        if (n % b > 9)
+            storeCharacter(s, i, n % b - 10 + 'A');
+        else
+            storeCharacter(s, i, n % b + '0');
+
+        n = n / b;
+        i = i + 1;
+
+        if (msb == 1) {
+            n   = n + (rightShift(INT_MIN, 1) / b) * 2;
+            msb = 0;
+        }
+    }
+
+    if (p > 0) {
+        while (i < p) {
+            storeCharacter(s, i, '0');
 
             i = i + 1;
         }
 
-        if (b == 16) {
-            putCharacter(s, i, 'x');
-            putCharacter(s, i + 1, '0');
+        storeCharacter(s, i, '.');
+        storeCharacter(s, i + 1, '0');
+
+        i = i + 2;
+        p = 0;
+    }
+
+    if (b == 10) {
+        if (sign) {
+            storeCharacter(s, i, '-');
+
+            i = i + 1;
+        }
+
+        while (i < a) {
+            storeCharacter(s, i, ' '); // align with spaces
+
+            i = i + 1;
+        }
+    } else {
+        while (i < a) {
+            storeCharacter(s, i, '0'); // align with zeros
+
+            i = i + 1;
+        }
+
+        if (b == 8) {
+            storeCharacter(s, i, '0');
+            storeCharacter(s, i + 1, '0');
+
+            i = i + 2;
+        } else if (b == 16) {
+            storeCharacter(s, i, 'x');
+            storeCharacter(s, i + 1, '0');
 
             i = i + 2;
         }
-    } else if (sign) {
-        putCharacter(s, i, '-');
-
-        i = i + 1;
     }
 
-    putCharacter(s, i, 0); // null terminated string
+    storeCharacter(s, i, 0); // null terminated string
 
     stringReverse(s);
 
@@ -981,8 +1170,8 @@ void print(int *s) {
 
     i = 0;
 
-    while (getCharacter(s, i) != 0) {
-        putchar(getCharacter(s, i));
+    while (loadCharacter(s, i) != 0) {
+        putchar(loadCharacter(s, i));
 
         i = i + 1;
     }
@@ -1039,10 +1228,13 @@ void printSymbol(int symbol) {
 }
 
 void printLineNumber(int* message) {
-    print((int*) "cstarc: ");
+    print(selfieName);
+    print((int*) ": ");
     print(message);
+    print((int*) " in ");
+    print(sourceName);
     print((int*) " in line ");
-    print(itoa(lineNumber, string_buffer, 10, 0));
+    print(itoa(lineNumber, string_buffer, 10, 0, 0));
     print((int*) ": ");
 }
 
@@ -1066,6 +1258,25 @@ void syntaxErrorCharacter(int expected) {
     println();
 }
 
+void getCharacter() {
+    int numberOfReadBytes;
+
+    numberOfReadBytes = read(sourceFD, character_buffer, 1);
+
+    if (numberOfReadBytes == 1)
+        character = *character_buffer;
+    else if (numberOfReadBytes == 0)
+        character = CHAR_EOF;
+    else {
+        print(selfieName);
+        print((int*) ": could not read character from input file ");
+        print(sourceName);
+        println();
+
+        exit(-1);
+    }
+}
+
 int isCharacterWhitespace() {
     if (character == CHAR_SPACE)
         return 1;
@@ -1086,7 +1297,7 @@ int findNextCharacter() {
 
     while (1) {
         if (inComment) {
-            character = getchar();
+            getCharacter();
 
             if (character == CHAR_LF)
                 inComment = 0;
@@ -1101,14 +1312,16 @@ int findNextCharacter() {
             else if (character == CHAR_CR)
                 lineNumber = lineNumber + 1;
 
-            character = getchar();
+            getCharacter();
 
         } else if (character == CHAR_HASH) {
-            character = getchar();
+            getCharacter();
+
             inComment = 1;
 
         } else if (character == CHAR_SLASH) {
-            character = getchar();
+            getCharacter();
+
             if (character == CHAR_SLASH)
                 inComment = 1;
             else {
@@ -1209,14 +1422,14 @@ int getSymbol() {
                 exit(-1);
             }
 
-            putCharacter(identifier, i, character);
+            storeCharacter(identifier, i, character);
 
             i = i + 1;
 
-            character = getchar();
+            getCharacter();
         }
 
-        putCharacter(identifier, i, 0); // null terminated string
+        storeCharacter(identifier, i, 0); // null terminated string
 
         symbol = identifierOrKeyword();
 
@@ -1231,14 +1444,14 @@ int getSymbol() {
                 exit(-1);
             }
 
-            putCharacter(integer, i, character);
+            storeCharacter(integer, i, character);
 
             i = i + 1;
 
-            character = getchar();
+            getCharacter();
         }
 
-        putCharacter(integer, i, 0); // null terminated string
+        storeCharacter(integer, i, 0); // null terminated string
 
         constant = atoi(integer);
 
@@ -1259,7 +1472,7 @@ int getSymbol() {
         symbol = SYM_INTEGER;
 
     } else if (character == CHAR_SINGLEQUOTE) {
-        character = getchar();
+        getCharacter();
 
         constant = 0;
 
@@ -1270,10 +1483,10 @@ int getSymbol() {
         } else
             constant = character;
 
-        character = getchar();
+        getCharacter();
 
         if (character == CHAR_SINGLEQUOTE)
-            character = getchar();
+            getCharacter();
         else if (character == CHAR_EOF) {
             syntaxErrorCharacter(CHAR_SINGLEQUOTE);
 
@@ -1284,7 +1497,7 @@ int getSymbol() {
         symbol = SYM_CHARACTER;
 
     } else if (character == CHAR_DOUBLEQUOTE) {
-        character = getchar();
+        getCharacter();
 
         string = malloc(maxStringLength + 1);
 
@@ -1296,96 +1509,113 @@ int getSymbol() {
                 exit(-1);
             }
 
-            putCharacter(string, i, character);
+            storeCharacter(string, i, character);
 
             i = i + 1;
 
-            character = getchar();
+            getCharacter();
         }
 
         if (character == CHAR_DOUBLEQUOTE)
-            character = getchar();
+            getCharacter();
         else {
             syntaxErrorCharacter(CHAR_DOUBLEQUOTE);
 
             exit(-1);
         }
 
-        putCharacter(string, i, 0); // null terminated string
+        storeCharacter(string, i, 0); // null terminated string
 
         symbol = SYM_STRING;
 
     } else if (character == CHAR_SEMICOLON) {
-        character = getchar();
+        getCharacter();
+
         symbol = SYM_SEMICOLON;
 
     } else if (character == CHAR_PLUS) {
-        character = getchar();
+        getCharacter();
+
         symbol = SYM_PLUS;
 
     } else if (character == CHAR_DASH) {
-        character = getchar();
+        getCharacter();
+
         symbol = SYM_MINUS;
 
     } else if (character == CHAR_ASTERISK) {
-        character = getchar();
+        getCharacter();
+
         symbol = SYM_ASTERISK;
 
     } else if (character == CHAR_EQUAL) {
-        character = getchar();
+        getCharacter();
+
         if (character == CHAR_EQUAL) {
-            character = getchar();
+            getCharacter();
+
             symbol = SYM_EQUALITY;
         } else
             symbol = SYM_ASSIGN;
 
     } else if (character == CHAR_LPARENTHESIS) {
-        character = getchar();
+        getCharacter();
+
         symbol = SYM_LPARENTHESIS;
 
     } else if (character == CHAR_RPARENTHESIS) {
-        character = getchar();
+        getCharacter();
+
         symbol = SYM_RPARENTHESIS;
 
     } else if (character == CHAR_LBRACE) {
-        character = getchar();
+        getCharacter();
+
         symbol = SYM_LBRACE;
 
     } else if (character == CHAR_RBRACE) {
-        character = getchar();
+        getCharacter();
+
         symbol = SYM_RBRACE;
 
     } else if (character == CHAR_COMMA) {
-        character = getchar();
+        getCharacter();
+
         symbol = SYM_COMMA;
 
     } else if (character == CHAR_LT) {
-        character = getchar();
+        getCharacter();
+
         if (character == CHAR_EQUAL) {
-            character = getchar();
+            getCharacter();
+
             symbol = SYM_LEQ;
         } else
             symbol = SYM_LT;
 
     } else if (character == CHAR_GT) {
-        character = getchar();
+        getCharacter();
+
         if (character == CHAR_EQUAL) {
-            character = getchar();
+            getCharacter();
+
             symbol = SYM_GEQ;
         } else
             symbol = SYM_GT;
 
     } else if (character == CHAR_EXCLAMATION) {
-        character = getchar();
+        getCharacter();
+
         if (character == CHAR_EQUAL)
-            character = getchar();
+            getCharacter();
         else
             syntaxErrorCharacter(CHAR_EQUAL);
 
         symbol = SYM_NOTEQ;
 
     } else if (character == CHAR_PERCENTAGE) {
-        character = getchar();
+        getCharacter();
+
         symbol = SYM_MOD;
 
     } else {
@@ -1868,7 +2098,7 @@ int help_call_codegen(int *entry, int *procedure) {
             setData(entry, binaryLength);
 
             emitJFormat(OP_JAL, 0);
-        } else if (getOpcode(loadMemory(getData(entry))) == OP_JAL) {
+        } else if (getOpcode(loadBinary(getData(entry))) == OP_JAL) {
             // CASE 3: function call, no declaration
             emitJFormat(OP_JAL, getData(entry) / 4);
 
@@ -2400,7 +2630,7 @@ void gr_while() {
         syntaxErrorSymbol(SYM_WHILE);
 
     // unconditional branch to beginning of while
-    emitIFormat(OP_BEQ, 0, 0, (brBackToWhile - binaryLength - 4) / 4);
+    emitIFormat(OP_BEQ, REG_ZR, REG_ZR, (brBackToWhile - binaryLength - 4) / 4);
 
     if (brForwardToEnd != 0)
         // first instruction after loop comes here
@@ -2460,7 +2690,7 @@ void gr_if() {
 
                     // if the "if" case was true, we jump to the end
                     brForwardToEnd = binaryLength;
-                    emitIFormat(OP_BEQ, 0, 0, 0);
+                    emitIFormat(OP_BEQ, REG_ZR, REG_ZR, 0);
 
                     // if the "if" case was not true, we jump here
                     fixup_relative(brForwardToElseOrEnd);
@@ -2862,7 +3092,7 @@ void gr_procedure(int *procedure, int returnType) {
             createSymbolTableEntry(GLOBAL_TABLE, currentProcedureName, binaryLength, FUNCTION, returnType, 0);
         else {
             if (getData(entry) != 0) {
-                if (getOpcode(loadMemory(getData(entry))) == OP_JAL)
+                if (getOpcode(loadBinary(getData(entry))) == OP_JAL)
                     fixlink_absolute(getData(entry), functionStart);
                 else {
                     printLineNumber((int*) "error");
@@ -3005,21 +3235,47 @@ void emitMainEntry() {
 
     mainJumpAddress = binaryLength;
 
+    // jump and link to main, will return here only if there is no exit call
     emitJFormat(OP_JAL, 0);
+
+    // we exit cleanly with error code 0 pushed onto the stack
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, -4);
+    emitIFormat(OP_SW, REG_SP, REG_ZR, 0);
 }
 
 // -----------------------------------------------------------------
 // ----------------------------- MAIN ------------------------------
 // -----------------------------------------------------------------
 
-int main_compiler() {
-    initScanner();
-    initParser();
+void compile() {
+    print(selfieName);
+    print((int*) ": this is selfie's cstarc compiling ");
+    print(sourceName);
+    println();
 
-    // memory in bytes and executable file name "out"
-    initMemory(maxBinaryLength, (int*) "out");
+    sourceFD = open(sourceName, 0, 0); // 0 = O_RDONLY
 
-    getSymbol();
+    if (sourceFD < 0) {
+        print(selfieName);
+        print((int*) ": could not open input file ");
+        print(sourceName);
+        println();
+
+        exit(-1);
+    }
+
+    // reset scanner
+    resetScanner();
+
+    // reset global symbol table
+    resetGlobalSymbolTable();
+
+    // allocate space for storing binary
+    binary       = malloc(maxBinaryLength);
+    binaryLength = 0;
+
+    // allocate space for storing source code line numbers
+    sourceLineNumber = malloc(maxBinaryLength);
 
     // jump to main
     emitMainEntry();
@@ -3032,21 +3288,22 @@ int main_compiler() {
     emitWrite();
     emitOpen();
     emitMalloc();
-    emitGetchar();
     emitPutchar();
-    emitYield();
 
     // parser
     gr_cstar();
 
-    if (getInstrIndex(loadMemory(mainJumpAddress)) != 0)
-        emitBinary();
-    else {
-        print((int*) "cstarc: main function missing");
-        println();
-    }
+    // emit global variables and strings
+    emitGlobalsStrings();
 
-    exit(0);
+    if (getInstrIndex(loadBinary(mainJumpAddress)) == 0) {
+        print(selfieName);
+        print((int*) ": main function missing in ");
+        print(sourceName);
+        println();
+
+        exit(-1);
+    }
 }
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -3227,35 +3484,29 @@ void decodeJFormat() {
 }
 
 // -----------------------------------------------------------------
-// ---------------------------- MEMORY -----------------------------
-// -----------------------------------------------------------------
-
-int tlb(int vaddr) {
-    if (vaddr % 4 != 0)
-        exception_handler(EXCEPTION_ADDRESSERROR);
-
-    // physical memory is word-addressed for lack of byte-sized data type
-    return vaddr / 4;
-}
-
-int loadMemory(int vaddr) {
-    return *(memory + tlb(vaddr));
-}
-
-void storeMemory(int vaddr, int data) {
-    *(memory + tlb(vaddr)) = data;
-}
-
-// -----------------------------------------------------------------
 // ---------------------------- BINARY -----------------------------
 // -----------------------------------------------------------------
+
+int loadBinary(int addr) {
+    return *(binary + addr / 4);
+}
+
+void storeBinary(int addr, int instruction) {
+    *(binary + addr / 4) = instruction;
+}
+
+void storeInstruction(int addr, int instruction) {
+    *(sourceLineNumber + addr / 4) = lineNumber;
+
+    storeBinary(addr, instruction);
+}
 
 void emitInstruction(int instruction) {
     if (binaryLength >= maxBinaryLength) {
         syntaxErrorMessage((int*) "exceeded maximum binary length");
         exit(-1);
     } else {
-        storeMemory(binaryLength, instruction);
+        storeInstruction(binaryLength, instruction);
 
         binaryLength = binaryLength + 4;
     }
@@ -3297,9 +3548,9 @@ void emitJFormat(int opcode, int instr_index) {
 void fixup_relative(int fromAddress) {
     int instruction;
 
-    instruction = loadMemory(fromAddress);
+    instruction = loadBinary(fromAddress);
 
-    storeMemory(fromAddress,
+    storeBinary(fromAddress,
         encodeIFormat(getOpcode(instruction),
             getRS(instruction),
             getRT(instruction),
@@ -3307,21 +3558,21 @@ void fixup_relative(int fromAddress) {
 }
 
 void fixup_absolute(int fromAddress, int toAddress) {
-    storeMemory(fromAddress,
-        encodeJFormat(getOpcode(loadMemory(fromAddress)), toAddress / 4));
+    storeBinary(fromAddress,
+        encodeJFormat(getOpcode(loadBinary(fromAddress)), toAddress / 4));
 }
 
 void fixlink_absolute(int fromAddress, int toAddress) {
     int previousAddress;
 
     while (fromAddress != 0) {
-        previousAddress = getInstrIndex(loadMemory(fromAddress)) * 4;
+        previousAddress = getInstrIndex(loadBinary(fromAddress)) * 4;
         fixup_absolute(fromAddress, toAddress);
         fromAddress = previousAddress;
     }
 }
 
-int copyStringToMemory(int *s, int a) {
+int copyStringToBinary(int *s, int a) {
     int l;
     int w;
 
@@ -3333,7 +3584,7 @@ int copyStringToMemory(int *s, int a) {
         w = w + 4 - l % 4;
 
     while (a < w) {
-        storeMemory(a, *s);
+        storeBinary(a, *s);
 
         s = s + 1;
         a = a + 4;
@@ -3342,58 +3593,90 @@ int copyStringToMemory(int *s, int a) {
     return w;
 }
 
-void emitBinary() {
+void emitGlobalsStrings() {
     int *entry;
-    int fd;
 
     entry = global_symbol_table;
+
+    // assert: n = binaryLength
 
     // allocate space for global variables and copy strings
     while ((int) entry != 0) {
         if (getClass(entry) == VARIABLE) {
-            storeMemory(binaryLength, getValue(entry));
+            storeBinary(binaryLength, getValue(entry));
 
             binaryLength = binaryLength + 4;
         } else if (getClass(entry) == STRING)
-            binaryLength = copyStringToMemory(getString(entry), binaryLength);
+            binaryLength = copyStringToBinary(getString(entry), binaryLength);
 
         entry = getNext(entry);
     }
 
-    // assert: file with name binaryName exists prior to execution of compiler
-    fd = open(binaryName, 1); // 1 = O_WRONLY
+    // assert: binaryLength == n + allocatedMemory
+
+    allocatedMemory = 0;
+}
+
+void emit() {
+    int fd;
+
+    // 1537 = 0x0601 = O_CREAT (0x0200) | O_WRONLY (0x0001) | O_TRUNC (0x0400)
+    // 420 = 00644 = S_IRUSR (00400) | S_IWUSR (00200) | S_IRGRP (00040) | S_IROTH (00004)
+    fd = open(binaryName, 1537, 420);
 
     if (fd < 0) {
-        syntaxErrorMessage((int*) "output file not found");
+        print(selfieName);
+        print((int*) ": could not create output file ");
+        print(binaryName);
+        println();
+
         exit(-1);
     }
 
-    // The mipster_syscall 4004 writes the code array into a file.
-    // The syscall uses the "write" system call of the OS and compiler.
-    // The write system call of our Linux uses little endian byte ordering.
-    write(fd, memory, binaryLength);
+    print(selfieName);
+    print((int*) ": writing code into output file ");
+    print(binaryName);
+    println();
+
+    write(fd, binary, binaryLength);
 }
 
-void loadBinary() {
+void load() {
     int fd;
     int numberOfReadBytes;
 
-    fd = open(binaryName, 0); // 0 = O_RDONLY
+    fd = open(binaryName, 0, 0); // 0 = O_RDONLY
 
-    if (fd < 0)
+    if (fd < 0) {
+        print(selfieName);
+        print((int*) ": could not open input file ");
+        print(binaryName);
+        println();
+
         exit(-1);
+    }
+
+    binary       = malloc(maxBinaryLength);
+    binaryLength = 0;
+
+    sourceLineNumber = (int*) 0;
 
     numberOfReadBytes = 4;
 
+    print(selfieName);
+    print((int*) ": loading code from input file ");
+    print(binaryName);
+    println();
+
     while (numberOfReadBytes == 4) {
-        numberOfReadBytes = read(fd, memory + tlb(binaryLength), 4);
+        numberOfReadBytes = read(fd, binary + binaryLength / 4, 4);
 
         if (debug_load) {
             print(binaryName);
             print((int*) ": ");
-            print(itoa(binaryLength, string_buffer, 16, 8));
+            print(itoa(binaryLength, string_buffer, 16, 8, 0));
             print((int*) ": ");
-            print(itoa(loadMemory(binaryLength), string_buffer, 16, 8));
+            print(itoa(loadBinary(binaryLength), string_buffer, 16, 8, 0));
             println();
         }
 
@@ -3429,10 +3712,10 @@ void syscall_exit() {
 
     print(binaryName);
     print((int*) ": exiting with error code ");
-    print(itoa(exitCode, string_buffer, 10, 0));
+    print(itoa(exitCode, string_buffer, 10, 0, 0));
     println();
 
-    exit(0);
+    halt = 1;
 }
 
 void emitRead() {
@@ -3475,11 +3758,11 @@ void syscall_read() {
     if (debug_read) {
         print(binaryName);
         print((int*) ": read ");
-        print(itoa(size, string_buffer, 10, 0));
+        print(itoa(size, string_buffer, 10, 0, 0));
         print((int*) " bytes from file with descriptor ");
-        print(itoa(fd, string_buffer, 10, 0));
+        print(itoa(fd, string_buffer, 10, 0, 0));
         print((int*) " into buffer at address ");
-        print(itoa((int) buffer, string_buffer, 16, 8));
+        print(itoa((int) buffer, string_buffer, 16, 8, 0));
         println();
     }
 }
@@ -3523,11 +3806,11 @@ void syscall_write() {
     if (debug_write) {
         print(binaryName);
         print((int*) ": wrote ");
-        print(itoa(size, string_buffer, 10, 0));
+        print(itoa(size, string_buffer, 10, 0, 0));
         print((int*) " bytes from buffer at address ");
-        print(itoa((int) buffer, string_buffer, 16, 8));
+        print(itoa((int) buffer, string_buffer, 16, 8, 0));
         print((int*) " into file with descriptor ");
-        print(itoa(fd, string_buffer, 10, 0));
+        print(itoa(fd, string_buffer, 10, 0, 0));
         println();
     }
 }
@@ -3536,7 +3819,9 @@ void emitOpen() {
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "open", binaryLength, FUNCTION, INT_T, 0);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+
+    emitIFormat(OP_ADDIU, REG_SP, REG_A2, 0); // mode
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
 
     emitIFormat(OP_LW, REG_SP, REG_A1, 0); // flags
     emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
@@ -3551,17 +3836,19 @@ void emitOpen() {
 }
 
 void syscall_open() {
+    int mode;
     int flags;
     int vaddr;
     int *filename;
     int fd;
 
+    mode  = *(registers+REG_A2);
     flags = *(registers+REG_A1);
     vaddr = *(registers+REG_A0);
 
     filename = memory + tlb(vaddr);
 
-    fd = open(filename, flags);
+    fd = open(filename, flags, mode);
 
     *(registers+REG_V0) = fd;
 
@@ -3570,9 +3857,11 @@ void syscall_open() {
         print((int*) ": opened file ");
         printString(filename);
         print((int*) " with flags ");
-        print(itoa(flags, string_buffer, 10, 0));
+        print(itoa(flags, string_buffer, 16, 0, 0));
+        print((int*) " and mode ");
+        print(itoa(mode, string_buffer, 8, 0, 0));
         print((int*) " returning file descriptor ");
-        print(itoa(fd, string_buffer, 10, 0));
+        print(itoa(fd, string_buffer, 10, 0, 0));
         println();
     }
 }
@@ -3618,38 +3907,9 @@ void syscall_malloc() {
     if (debug_malloc) {
         print(binaryName);
         print((int*) ": malloc ");
-        print(itoa(size, string_buffer, 10, 0));
+        print(itoa(size, string_buffer, 10, 0, 0));
         print((int*) " bytes returning address ");
-        print(itoa(bump, string_buffer, 16, 8));
-        println();
-    }
-}
-
-void emitGetchar() {
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "getchar", binaryLength, FUNCTION, INT_T, 0);
-
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
-
-    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_GETCHAR);
-    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
-
-    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
-}
-
-void syscall_getchar() {
-    int c;
-
-    c = getchar();
-
-    *(registers+REG_V0) = c;
-
-    if (debug_getchar) {
-        print(binaryName);
-        print((int*) ": getchar ");
-        printCharacter(c);
+        print(itoa(bump, string_buffer, 16, 8, 0));
         println();
     }
 }
@@ -3700,6 +3960,358 @@ void syscall_yield(){
 
 }
 
+void emitSwitchEmu() {
+
+    // create Symbol Table Entroy for switch_emu
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "switchEmu", binaryLength, FUNCTION, INT_T, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SWITCH_EMU);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+
+}
+
+void syscall_switchEmu(){
+
+	int* Buffer;
+	Buffer = (int*)malloc(4*10);
+
+	print((int*) "_________________________________________________");
+	println();
+	print((int*) "_________________________________________________");
+	println();
+	print((int*) "_________________________________________________");
+	println();
+	print((int*) "This is the Process List before running kernel");
+	println();
+	print((int*) "_________________________________________________");
+	println();
+	print((int*) "PIDs");
+	println();
+	printListPID(process_list);
+	print((int*) "PCs");
+	println();
+	printListPC(process_list);
+    	print((int*) "Segment Start");
+    	println();
+    	printListSegment(process_list);
+	print((int*) "_________________________________________________");
+ 	println();
+ 	print((int*) "Ready-Queue before running Kernel");
+ 	println();
+ 	print((int*) "PIDs");
+ 	println();
+ 	printListPID(ready_queue);
+ 	print((int*) "PCs");
+ 	println();
+ 	printListPC(ready_queue);
+	print((int*) "Segment Start");
+ 	println();
+	printListSegment(ready_queue);
+	print((int*) "_________________________________________________");
+	println();
+
+	print((int*) "Running Process");
+ 	println();
+	print((int*) "PID");
+	println();
+	print(itoa(*(running_process), Buffer, 10, 0, 0));
+	println();
+	print((int*) "PC");
+	println();
+	print(itoa(*(running_process+1), Buffer, 10, 0, 0));
+	println();
+	print((int*) "Segment Start");
+	println();
+	print(itoa(*(running_process+3), Buffer, 10, 0, 0));
+	println();
+
+	print((int*) "Running Process ID");
+	println();
+	print(itoa(running_process_id, Buffer, 10, 0, 0));
+	println();
+
+	prev_node = getNodeByIdFromProcessList(running_process_id);
+	prev_process = (int*) (prev_node);
+
+	if(running_process_id == number_of_processes){
+		running_process_id = 1;
+		print((int*) "if");
+		println();
+	}
+	else{
+		running_process_id = running_process_id + 1;
+		print((int*) "else");
+		println();
+	}
+
+	next_node = getNodeByIdFromProcessList(running_process_id);
+	next_process = (int*) (next_node);
+
+	*(running_process + 1) = *(running_process + 1) + 1;
+
+	running_process = next_process ;
+
+	ready_queue = deleteFirstNodeFromList(ready_queue);
+
+	print((int*) "_________________________________________________");
+	println();
+	print((int*) "_________________________________________________");
+	println();
+	print((int*) "_________________________________________________");
+	println();
+	print((int*) "This is the Process List after running kernel");
+	println();
+	print((int*) "_________________________________________________");
+	println();
+	print((int*) "PIDs");
+	println();
+	printListPID(process_list);
+	print((int*) "PCs");
+	println();
+	printListPC(process_list);
+    	print((int*) "Segment Start");
+    	println();
+    	printListSegment(process_list);
+
+	print((int*) "_________________________________________________");
+
+ 	println();
+ 	print((int*) "Ready-Queue after running Kernel");
+ 	println();
+ 	print((int*) "PIDs");
+ 	println();
+ 	printListPID(ready_queue);
+ 	print((int*) "PCs");
+ 	println();
+ 	printListPC(ready_queue);
+ 	print((int*) "Segment Start");
+ 	println();
+ 	printListSegment(ready_queue);
+
+	print((int*) "_________________________________________________");
+	println();
+
+	print((int*) "Running Process");
+ 	println();
+	print((int*) "PID");
+	println();
+	print(itoa(*(running_process), Buffer, 10, 0, 0));
+	println();
+	print((int*) "PC");
+	println();
+	print(itoa(*(running_process+1), Buffer, 10, 0, 0));
+	println();
+	print((int*) "Segment Start");
+	println();
+	print(itoa(*(running_process+3), Buffer, 10, 0, 0));
+	println();
+
+	print((int*) "Running Process ID");
+	println();
+	print(itoa(running_process_id, Buffer, 10, 0, 0));
+	println();
+
+    if (debug_switch_emu) {
+        print(binaryName);
+	println();
+        print((int*) "switchEmu");
+        println();
+    }
+
+}
+
+void emitSwitchOS() {
+
+    // create Symbol Table Entroy for switch_os
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "switchOS", binaryLength, FUNCTION, INT_T, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SWITCH_OS);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+
+}
+
+void syscall_switchOS(){
+
+	prev_node = getNodeByIdFromProcessList(running_process_id);
+	prev_process = (int*) (prev_node);
+
+	next_node = getNodeByIdFromProcessList(0);
+	next_process = (int*) (next_node);
+
+	running_process = next_process;
+
+	ready_queue = addToList(ready_queue, (int) prev_process);
+
+	if (debug_switch_os) {
+		print(binaryName);
+		println();
+		print((int*) "switchOS");
+		println();
+	}
+
+}
+
+// *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
+// -----------------------------------------------------------------
+// ---------------------------     kOS   ---------------------------
+// -----------------------------------------------------------------
+// *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
+
+int* getNodeByIdFromProcessList(int id){
+
+	int* node_i;
+	int* process_i;
+	int i;
+	int j;
+	int* Buffer;
+
+	i = 0;
+
+	Buffer = (int*)malloc(4*10);
+
+	while(i < all_processes) {
+		node_i = (int*) getNodeFromList(process_list, i);
+		process_i = (int*) *(node_i + 1);
+
+		j = (int) *(process_i);
+
+		if(j == id){
+
+			return process_i;
+		}
+		i = i + 1;
+	}
+
+
+}
+
+void create_process_List(int number){
+	int *node;
+	int *process;
+	int pid_process_list;
+	int pid_ready_queue;
+
+
+	pid_process_list = 0;
+	pid_ready_queue = number_of_processes - 1;
+	process_list = initializeList(process_list);
+
+	while(pid_process_list < number){
+		if(pid_process_list == 0){
+			process_list = addToList(process_list, (int) kernel_process);
+			pid_process_list = pid_process_list + 1;
+		}
+		else{
+			node = (int*) getNodeFromList(ready_queue, pid_ready_queue);
+			process = (int*) *(node+1);
+			process_list = addToList(process_list, (int) process);
+			pid_process_list = pid_process_list + 1;
+			pid_ready_queue = pid_ready_queue - 1;
+		}
+	}
+}
+
+void runOS(int argc, int* argv){
+
+	while(1){
+		syscall_switchEmu();
+		run(argc, (int*) argv);
+	}
+
+}
+
+void kOS(int argc, int* argv) {
+	int *new_reg;
+	int* Buffer;
+
+	if(booting == 1){
+
+		booting = 0;
+
+		new_reg = malloc(4*32);
+		Buffer = (int*)malloc(4*10);
+
+		all_processes = number_of_processes + 1;
+
+		kernel_process = create_process(0, new_reg, reg_hi, reg_lo, 0);
+		running_process = kernel_process;
+
+		create_segmentation_table(all_processes);
+		create_ready_queue(all_processes, ticks);
+		create_process_List(all_processes);
+
+		print((int*) "_________________________________________________");
+		println();
+		print((int*) "__This is the Process List after initialization__");
+		println();
+		print((int*) "_________________________________________________");
+		println();
+		print((int*) "PIDs");
+		println();
+		printListPID(process_list);
+		print((int*) "PCs");
+		println();
+		printListPC(process_list);
+	    	print((int*) "Segment Start");
+	    	println();
+	    	printListSegment(process_list);
+
+		print((int*) "_________________________________________________");
+		println();
+		print((int*) "__This is the Ready Queue after initialization___");
+		println();
+		print((int*) "_________________________________________________");
+		println();
+		print((int*) "PIDs");
+		println();
+		printListPID(ready_queue);
+		print((int*) "PCs");
+		println();
+		printListPC(ready_queue);
+	    	print((int*) "Segment Start");
+	    	println();
+	    	printListSegment(ready_queue);
+
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "__This is the Running Process after initialization__");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "Running Process");
+		println();
+		print((int*) "PID");
+		println();
+		print(itoa(*(running_process), Buffer, 10, 0, 0));
+		println();
+		print((int*) "PC");
+		println();
+		print(itoa(*(running_process+1), Buffer, 10, 0, 0));
+		println();
+		print((int*) "Segment Start");
+		println();
+		print(itoa(*(running_process+3), Buffer, 10, 0, 0));
+		println();
+
+		runOS(argc, (int*) argv);
+	}
+
+	else{
+		runOS(argc, (int*) argv);
+	}
+
+}
+
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
 // ---------------------     E M U L A T O R   ---------------------
@@ -3707,27 +4319,36 @@ void syscall_yield(){
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 
 // -----------------------------------------------------------------
-// ------------------------- INSTRUCTIONS --------------------------
+// ---------------------------- MEMORY -----------------------------
 // -----------------------------------------------------------------
 
-// ------------------------ GLOBAL VARIABLES -----------------------------------
-// ready queue
-int* ready_queue;
-// number of instructions for one process in one run
-int numb_of_instr;
-// getting maximal memory size
-int MAX_MEM;
-// Size of Segment
-int segment_size;
-// Address of the actual running thread
-int* running_process;
-// Segmentation Table
-int* segmentation_table;
+int tlb(int vaddr) {
+    if (vaddr % 4 != 0)
+        exception_handler(EXCEPTION_ADDRESSERROR);
 
+    // physical memory is word-addressed for lack of byte-sized data type
+    return vaddr / 4;
+}
 
-void printList(int *list);
-void printListPC(int *list);
-int* create_segment(int *start);
+int loadMemory(int vaddr) {
+    int paddr;
+
+    paddr = tlb(vaddr);
+
+    return *(memory + paddr);
+}
+
+void storeMemory(int vaddr, int data) {
+    int paddr;
+
+    paddr = tlb(vaddr);
+
+    *(memory + paddr) = data;
+}
+
+// -----------------------------------------------------------------
+// ------------------------- INSTRUCTIONS --------------------------
+// -----------------------------------------------------------------
 
 void fct_syscall() {
     if (debug_disassemble) {
@@ -3745,10 +4366,12 @@ void fct_syscall() {
         syscall_open();
     } else if (*(registers+REG_V0) == SYSCALL_MALLOC) {
         syscall_malloc();
-    } else if (*(registers+REG_V0) == SYSCALL_GETCHAR) {
-        syscall_getchar();
     } else if (*(registers+REG_V0) == SYSCALL_YIELD) {
 	syscall_yield();
+    } else if (*(registers+REG_V0) == SYSCALL_SWITCH_EMU) {
+	syscall_switchEmu();
+    } else if (*(registers+REG_V0) == SYSCALL_SWITCH_OS) {
+	syscall_switchOS();
     } else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
     }
@@ -3770,12 +4393,17 @@ void op_jal() {
 
     pc = instr_index * 4;
 
+    // keep track of number of procedure calls
+    calls = calls + 1;
+
+    *(callsPerAddress + pc / 4) = *(callsPerAddress + pc / 4) + 1;
+
     // TODO: execute delay slot
 
     if (debug_disassemble) {
         printOpcode(opcode);
         print((int*) " ");
-        print(itoa(instr_index, string_buffer, 16, 8));
+        print(itoa(instr_index, string_buffer, 16, 8, 0));
         println();
     }
 }
@@ -3788,7 +4416,7 @@ void op_j() {
     if (debug_disassemble) {
         printOpcode(opcode);
         print((int*) " ");
-        print(itoa(instr_index, string_buffer, 16, 8));
+        print(itoa(instr_index, string_buffer, 16, 8, 0));
         println();
     }
 }
@@ -3798,6 +4426,13 @@ void op_beq() {
 
     if (*(registers+rs) == *(registers+rt)) {
         pc = pc + signExtend(immediate) * 4;
+
+        if (signExtend(immediate) < 0) {
+            // keep track of number of loop iterations
+            loops = loops + 1;
+
+            *(loopsPerAddress + pc / 4) = *(loopsPerAddress + pc / 4) + 1;
+        }
 
         // TODO: execute delay slot
     }
@@ -3809,7 +4444,7 @@ void op_beq() {
         putchar(',');
         printRegister(rt);
         putchar(',');
-        print(itoa(signExtend(immediate), string_buffer, 10, 0));
+        print(itoa(signExtend(immediate), string_buffer, 10, 0, 0));
         println();
     }
 }
@@ -3830,7 +4465,7 @@ void op_bne() {
         putchar(',');
         printRegister(rt);
         putchar(',');
-        print(itoa(signExtend(immediate), string_buffer, 10, 0));
+        print(itoa(signExtend(immediate), string_buffer, 10, 0, 0));
         println();
     }
 }
@@ -3849,7 +4484,7 @@ void op_addiu() {
         putchar(',');
         printRegister(rs);
         putchar(',');
-        print(itoa(signExtend(immediate), string_buffer, 10, 0));
+        print(itoa(signExtend(immediate), string_buffer, 10, 0, 0));
         println();
     }
 }
@@ -3861,21 +4496,6 @@ void fct_jr() {
         printFunction(function);
         print((int*) " ");
         printRegister(rs);
-        println();
-    }
-}
-
-void op_lui() {
-    *(registers+rt) = leftShift(immediate, 16);
-
-    pc = pc + 4;
-
-    if (debug_disassemble) {
-        printOpcode(opcode);
-        print((int*) " ");
-        printRegister(rt);
-        putchar(',');
-        print(itoa(signExtend(immediate), string_buffer, 10, 0));
         println();
     }
 }
@@ -3979,6 +4599,11 @@ void op_lw() {
 
     *(registers+rt) = loadMemory(vaddr);
 
+    // keep track of number of loads
+    loads = loads + 1;
+
+    *(loadsPerAddress + pc / 4) = *(loadsPerAddress + pc / 4) + 1;
+
     pc = pc + 4;
 
     if (debug_disassemble) {
@@ -3986,7 +4611,7 @@ void op_lw() {
         print((int*) " ");
         printRegister(rt);
         putchar(',');
-        print(itoa(signExtend(immediate), string_buffer, 10, 0));
+        print(itoa(signExtend(immediate), string_buffer, 10, 0, 0));
         putchar('(');
         printRegister(rs);
         putchar(')');
@@ -4021,6 +4646,11 @@ void op_sw() {
 
     storeMemory(vaddr, *(registers+rt));
 
+    // keep track of number of stores
+    stores = stores + 1;
+
+    *(storesPerAddress + pc / 4) = *(storesPerAddress + pc / 4) + 1;
+
     pc = pc + 4;
 
     if (debug_disassemble) {
@@ -4028,7 +4658,7 @@ void op_sw() {
         print((int*) " ");
         printRegister(rt);
         putchar(',');
-        print(itoa(signExtend(immediate), string_buffer, 10, 0));
+        print(itoa(signExtend(immediate), string_buffer, 10, 0, 0));
         putchar('(');
         printRegister(rs);
         putchar(')');
@@ -4073,7 +4703,7 @@ void pre_debug() {
     if (debug_disassemble) {
         print(binaryName);
         print((int*) ": $pc=");
-        print(itoa(pc, string_buffer, 16, 8));
+        print(itoa(pc, string_buffer, 16, 8, 0));
         print((int*) ": ");
     }
 }
@@ -4089,7 +4719,7 @@ void post_debug() {
                 print((int*) ": ");
                 printRegister(i);
                 putchar(CHAR_EQUAL);
-                print(itoa(*(registers+i), string_buffer, 16, 8));
+                print(itoa(*(registers+i), string_buffer, 16, 8, 0));
                 println();
             }
             i = i + 1;
@@ -4148,46 +4778,107 @@ void execute() {
     }
 }
 
-void run() {
-    int instr;
-    int* nextprocess;
+// Print the value of the Process IDs
+void printListPID(int *list) {
+	int counter;
+	int number;
+	int *Buffer;
+	int *node;
+	int *process;
 
-    instr = 0;
-    while (1) {
-	fetch();
-        decode();
-        pre_debug();
-        execute();
-        post_debug();
+	Buffer = (int*)malloc(4*10);
 
-	instr = instr + 1;
-        *(running_process+1) = *(running_process+1) + 1;
+	counter = sizeOfList(list)-1;
 
-        if(instr == numb_of_instr){
-         //round robin scheduling and switching the running process
-         schedule_and_switch();
-         instr = 0;
-        }
-    }
+	while(counter >= 0) {
+		node = (int*) getNodeFromList(list, counter);
+		process = (int*) *(node+1);
+		number = *(process);
+    		print(itoa(number, Buffer, 10, 0, 0));
+		putchar(CHAR_LF);
+		counter = counter - 1;
+	}
+
 }
 
-void parse_args(int argc, int *argv) {
-    // assert: ./selfie -m size executable {-m size executable}
+// Print the value of the Program counters
+void printListPC(int *list) {
 
-    // memory size in bytes and executable file name
-    initMemory(atoi((int*) *(argv+2)) * 1024 * 1024, (int*) *(argv+3));
+	int counter;
+	int number;
+	int *Buffer;
+	int *node;
+	int *process;
 
-    MAX_MEM = memorySize;
+	counter = sizeOfList(list)-1;
 
-    // initialize stack pointer
-    *(registers+REG_SP) = memorySize - 4;
-
-    print(binaryName);
-    print((int*) ": memory size ");
-    print(itoa(memorySize / 1024 / 1024, string_buffer, 10, 0));
-    print((int*) "MB");
-    println();
+	while(counter >= 0) {
+		node = (int*) getNodeFromList(list, counter);
+		process = (int*) *(node+1);
+		number = *(process+1);
+		Buffer = (int*)malloc(4*10);
+    		print(itoa(number, Buffer, 10, 0, 0));
+		putchar(CHAR_LF);
+		counter = counter - 1;
+	}
 }
+
+// Print the value of the Segment Starts
+void printListSegment(int *list) {
+
+	int counter;
+	int number;
+	int *Buffer;
+	int *node;
+	int *process;
+
+	counter = sizeOfList(list)-1;
+
+	while(counter >= 0) {
+		node = (int*) getNodeFromList(list, counter);
+		process = (int*) *(node+1);
+		number = *(process+3);
+		Buffer = (int*)malloc(4*10);
+    		print(itoa(number, Buffer, 10, 0, 0));
+		putchar(CHAR_LF);
+		counter = counter - 1;
+	}
+}
+
+void run(int argc, int* argv) {
+
+    	int instr;
+    	int *Buffer;
+
+    	instr = 0;
+    	halt = 0;
+
+    	while (halt == 0) {
+    	    //fetch();
+    	    //decode();
+    	    //pre_debug();
+    	    //execute();
+    	    //post_debug();
+
+		instr = instr + 1;
+		*(running_process + 1) = *(running_process + 1) + 1;
+
+		if(instr == numb_of_instr){
+			print((int*) "Running Process");
+			println();
+			halt = 1;
+		}
+
+    	}
+
+	syscall_switchOS();
+	kOS(argc, (int*) argv);
+
+}
+
+// -----------------------------------------------------------------
+// ----------------------------- MAIN ------------------------------
+// -----------------------------------------------------------------
 
 void up_push(int value) {
     int vaddr;
@@ -4210,6 +4901,33 @@ int up_malloc(int size) {
     return *(registers+REG_V0);
 }
 
+int up_copyString(int *s) {
+    int l;
+    int a;
+    int w;
+    int t;
+
+    l = stringLength(s) + 1;
+
+    a = up_malloc(l);
+
+    w = a + l;
+
+    if (l % 4 != 0)
+        w = w + 4 - l % 4;
+
+    t = a;
+
+    while (a < w) {
+        storeMemory(a, *s);
+
+        s = s + 1;
+        a = a + 4;
+    }
+
+    return t;
+}
+
 void up_copyArguments(int argc, int *argv) {
     int vaddr;
 
@@ -4220,14 +4938,114 @@ void up_copyArguments(int argc, int *argv) {
     up_push(vaddr);
 
     while (argc > 0) {
-        storeMemory(vaddr, up_malloc(stringLength((int*) *argv) + 1));
-
-        copyStringToMemory((int*) *argv, loadMemory(vaddr));
+        storeMemory(vaddr, up_copyString((int*) *argv));
 
         vaddr = vaddr + 4;
 
         argv = argv + 1;
         argc = argc - 1;
+    }
+}
+
+void copyBinaryToMemory() {
+    int a;
+
+    a = 0;
+
+    while (a < binaryLength) {
+        storeMemory(a, loadBinary(a));
+
+        a = a + 4;
+    }
+}
+
+int addressWithMaxCounter(int *counters, int max) {
+    int a;
+    int n;
+    int i;
+    int c;
+
+    a = -1;
+
+    n = 0;
+
+    i = 0;
+
+    while (i < maxBinaryLength / 4) {
+        c = *(counters + i);
+
+        if (n < c)
+            if (c < max) {
+                n = c;
+                a = i * 4;
+            }
+
+        i = i + 1;
+    }
+
+    return a;
+}
+
+int fixedPointRatio(int a, int b) {
+    int r;
+
+    r = 0;
+
+    if (a <= INT_MAX / 100) {
+        if (b != 0)
+            r = a * 100 / b;
+    } else if (a <= INT_MAX / 10) {
+        if (b / 10 != 0)
+            r = a * 10 / (b / 10);
+    } else {
+        if (b / 100 != 0)
+            r = a / (b / 100);
+    }
+
+    if (r != 0)
+        return 1000000 / r;
+    else
+        return 0;
+}
+
+int printCounters(int total, int *counters, int max) {
+    int a;
+
+    a = addressWithMaxCounter(counters, max);
+
+    print(itoa(*(counters + a / 4), string_buffer, 10, 0, 0));
+
+    print((int*) "(");
+    print(itoa(fixedPointRatio(total, *(counters + a / 4)), string_buffer, 10, 0, 2));
+    print((int*) "%)");
+
+    if (*(counters + a / 4) != 0) {
+        print((int*) "@");
+        print(itoa(a, string_buffer, 16, 8, 0));
+        if (sourceLineNumber != (int*) 0){
+            print((int*) "(~");
+            print(itoa(*(sourceLineNumber + a / 4), string_buffer, 10, 0, 0));
+            print((int*) ")");
+        }
+    }
+
+    return a;
+}
+
+void printProfile(int *message, int total, int *counters) {
+    int a;
+
+    if (total > 0) {
+        print(selfieName);
+        print(message);
+        print(itoa(total, string_buffer, 10, 0, 0));
+        print((int*) ",");
+        a = printCounters(total, counters, INT_MAX);
+        print((int*) ",");
+        a = printCounters(total, counters, *(counters + a / 4));
+        print((int*) ",");
+        a = printCounters(total, counters, *(counters + a / 4));
+        println();
     }
 }
 
@@ -4353,14 +5171,14 @@ void printList(int *list) {
 		nodeNumber = (int*) getNodeFromList(list, counter);
 		number = *(nodeNumber+1);
 		Buffer = (int*)malloc(4*10);
-    	print(itoa(number, Buffer, 10, 0));
+    		print(itoa(number, Buffer, 10, 0, 0));
 		putchar(CHAR_LF);
 		counter = counter - 1;
 	}
 }
 
 //Testing for Assignment 00
-int test00() {
+int testList() {
 
 	int *list;
 	// Create new linked list (FIFO Linked List):
@@ -4397,53 +5215,11 @@ int test00() {
 	exit(0);
 }
 
-//// Assignment 1: Loading, scheduling, switching, execution ////
-//Implement basic concurrent execution of n processes in mipster. n >= 2
-//understand how mipster interprets and executes binary instructions. Tipp: add your own comments to the code
-//mipster maintains a local state for a process (running executable), e.g., pc, registers, memory
-//understand the purpose of each variable and data structure
-//duplicate the process state n times
-//running mipster like: ./selfie -m 32 yourbinary should generate n instances of yourbinary in a single instance of mipster
-//implement preemptive multitasking, i.e., switching between the n instances of yourbinary is determined by mipster
-//switch processes every m instructions. 1 <= m <= number of instructions in yourbinary
-//implement round-robin scheduling
-//add some output in yourbinary to demonstrate context switching
-//Deadline: Oct 22, end of day
-
-// ------------------------ DATA STRUCTURE FOR A PROCESS -----------------------
-// Creating a new Process with Process ID (new_pid), Programm Counter (new_pc),
-// Address to the Register (new_reg), Address to the Memory (new_mem),
-// hi register for multiplication/division (new_reg_hi) and
-// lo register for multiplication/division (new_reg_lo) and
-int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo, int segment_number){
-	//initialization of the process
-	int *process;
-	int *segment;
-	int *start;
-	int start_n_segment;
-	//memory allocation
-	process = malloc (7 * 4);
-	start_n_segment = segment_number * segment_size;
-	start = (int*) (*memory + start_n_segment);
-	segment = (int*) create_segment(start);
-
-	//initalization of the argments of the process
-	*process = new_pid;
-	*(process+1) = 0;
-	*(process+2) = (int) new_reg;
-	*(process+3) = *segment;
-	*(process+4) = new_reg_hi;
-	*(process+5) = new_reg_lo;
-	*(process+6) = segment_number;
-
-	return process;
-}
-
 // ------------------------ DATA STRUCTURE FOR A SEGMENT -----------------------
 // Creating a new Segment with Startaddress (start) and Size (size).
-int* create_segment(int *start){
+int* create_segment(int* start){
 	//initialization of the process
-	int *segment;
+	int* segment;
 	//memory allocation
 	segment = malloc (2 * 4);
 
@@ -4454,77 +5230,64 @@ int* create_segment(int *start){
 	return segment;
 }
 
-// ------------------------ READY QUEUE ----------------------------------------
-// Creating a Ready queue with n processes and with m as number of instructions
-void create_ready_queue(int n, int m){
+// ------------------------ Segment Table ----------------------------------------
+void create_segmentation_table(int segments){
+	int *Buffer;
+	int memory_size;
 
-	int *new_process;
-	int pid;
-	int *new_reg;
-	int segment_number;
+	Buffer = (int*)malloc(4*10);
 
-	numb_of_instr = m;
-	pid = 0;
-	segment_number = 0;
-	ready_queue = initializeList(ready_queue);
-
-	while(pid < n){
-		new_reg = malloc(4*32);
-		if(pid == 0){
-			running_process = create_process(pid, new_reg, reg_hi, reg_lo, segment_number);
-		}
-		else{
-			new_process = create_process(pid, new_reg, reg_hi, reg_lo, segment_number);
-			ready_queue = addToList(ready_queue, (int) new_process);
-		}
-		pid = pid + 1;
-		segment_number = segment_number + 1;
-	}
+	segment_size = 1024 * 1024 / 4;
+	memory_size = segments * segment_size;
+	segmentation_table = (int*)malloc(segments * 4);
+	memory = (int*)malloc(memory_size);
 }
 
+// ------------------------ DATA STRUCTURE FOR A PROCESS -----------------------
+// Creating a new Process with Process ID (new_pid), Programm Counter (new_pc),
+// Address to the Register (new_reg), Address to the Memory (new_mem),
+// hi register for multiplication/division (new_reg_hi) and
+// lo register for multiplication/division (new_reg_lo) and
+int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo, int segment_number){
+	//initialization of the process
+	int* process;
+	int start_n_segment;
+	int* segment;
+	int* start;
 
-void printListPID(int *list) {
-	int counter;
-	int number;
-	int *Buffer;
-	int *node;
-	int *process;
+	//memory allocation
+	process = malloc (7 * 4);
 
-	counter = sizeOfList(list)-1;
+	if(new_pid == 0){
 
-	while(counter >= 0) {
-		node = (int*) getNodeFromList(list, counter);
-		process = (int*) *(node+1);
-		number = *(process);
-		Buffer = (int*)malloc(4*10);
-    	print(itoa(number, Buffer, 10, 0));
-		putchar(CHAR_LF);
-		counter = counter - 1;
+		//initalization of the argments of the process
+		*process = new_pid;
+		*(process+1) = 0;
+		*(process+2) = (int) new_reg;
+		*(process+3) = (int) memory;
+		*(process+4) = new_reg_hi;
+		*(process+5) = new_reg_lo;
+		*(process+6) = segment_number;
+
+		return process;
 	}
+	else{
+		start_n_segment = segment_number * segment_size;
+		start = (int*) (*(memory) + start_n_segment);
+		segment = (int*) create_segment(start);
 
-}
 
-// Print the value of the Program counters
-void printListPC(int *list) {
+		//initalization of the argments of the process
+		*process = new_pid;
+		*(process+1) = 0;
+		*(process+2) = (int) new_reg;
+		*(process+3) = *segment;
+		*(process+4) = new_reg_hi;
+		*(process+5) = new_reg_lo;
+		*(process+6) = segment_number;
 
-	int counter;
-	int number;
-	int *Buffer;
-	int *node;
-	int *process;
-
-	counter = sizeOfList(list)-1;
-
-	while(counter >= 0) {
-		node = (int*) getNodeFromList(list, counter);
-		process = (int*) *(node+1);
-		number = *(process+1);
-		Buffer = (int*)malloc(4*10);
-    		print(itoa(number, Buffer, 10, 0));
-		putchar(CHAR_LF);
-		counter = counter - 1;
+		return process;
 	}
-
 }
 
 void schedule_and_switch(){
@@ -4550,229 +5313,168 @@ void schedule_and_switch(){
 	}
 }
 
-void create_segmentation_table(int segments){
-	int *Buffer;
-	int memory_size;
+// ------------------------ READY QUEUE ----------------------------------------
+// Creating a Ready queue with n processes and with m as number of instructions
+void create_ready_queue(int n, int m){
+	int *new_process;
+	int pid;
+	int *new_reg;
+	int segment_number;
 
-	Buffer = (int*)malloc(4*10);
+	numb_of_instr = m;
+	pid = 1;
+	segment_number = 1;
+	ready_queue = initializeList(ready_queue);
+	running_process_id = 0;
 
-	segment_size = 1024 * 1024 / 4;
-	memory_size = segments * segment_size;
-	segmentation_table = (int*)malloc(segments * 4);
-	memory = (int*)malloc(memory_size);
-}
-
-void runtest() {
-    int* nextprocess;
-    int instr;
-    int *Buffer;
-
-    instr = 0;
-    Buffer = (int*)malloc(4*10);
-
-    while (1) {
-	fetch();
-        decode();
-        pre_debug();
-        execute();
-        post_debug();
-
-	instr = instr + 1;
-	*(running_process + 1) = *(running_process + 1) + 1;
-
-	if(instr == numb_of_instr){
-	 //round robin scheduling and switching the running process
-
-	 //Printing the Ready queue and the running process
-
-	 print((int*) "--------------------");
-	 println();
-	 print((int*) "--------------------");
-	 println();
-	 print((int*) "Ready-Queue after running Process");
-	 println();
-	 print((int*) "PIDs");
-	 println();
-	 printListPID(ready_queue);
-	 print((int*) "PCs");
-	 println();
-	 printListPC(ready_queue);
-	 print((int*) "Running Process");
-	 println();
-	 print((int*) "PID");
-	 println();
-	 print(itoa(*(running_process), Buffer, 10, 0));
-	 println();
-	 print((int*) "PC");
-	 println();
-	 print(itoa(*(running_process+1), Buffer, 10, 0));
-	 println();
-	 print((int*) "Segment Start");
-	 println();
-	 print(itoa(*(running_process+3), Buffer, 10, 0));
-	 println();
-	 syscall_yield();
-	 print((int*) "--------------------");
-	 println();
-	 print((int*) "--------------------");
-	 println();
-	 print((int*) "Ready-Queue after switching Process");
-	 println();
-	 print((int*) "PIDs");
-	 println();
-	 printListPID(ready_queue);
-	 print((int*) "PCs");
-	 println();
-	 printListPC(ready_queue);
-	 print((int*) "Running Process");
-	 println();
-	 print((int*) "PID");
-	 println();
-	 print(itoa(*(running_process), Buffer, 10, 0));
-	 println();
-	 print((int*) "PC");
-	 println();
-	 print(itoa(*(running_process+1), Buffer, 10, 0));
-	 println();
-	 print((int*) "Segment Start");
-	 println();
-	 print(itoa(*(running_process+3), Buffer, 10, 0));
-	 println();
-	 instr = 0;
+	while(pid < n){
+		new_reg = malloc(4*32);
+		new_process = create_process(pid, new_reg, reg_hi, reg_lo, segment_number);
+		ready_queue = addToList(ready_queue, (int) new_process);
+		pid = pid + 1;
+		segment_number = segment_number + 1;
 	}
-    }
 }
 
-int main_emulator(int argc, int *argv) {
+void emulate(int argc, int *argv) {
 
-    int *Buffer;
-    int ticks;
-    int number_of_processes;
+    print(selfieName);
+    print((int*) ": this is selfie's mipster executing ");
+    print(binaryName);
+    print((int*) " with ");
+    print(itoa(memorySize / 1024 / 1024, string_buffer, 10, 0, 0));
+    print((int*) "MB of memory");
+    println();
 
-    ticks = 1000;
-    number_of_processes = 5;
+    copyBinaryToMemory();
+    resetInterpreter();
 
-    if(testvar == 0){
-    	initInterpreter();
+    *(registers+REG_SP) = memorySize - 4;
+    *(registers+REG_GP) = binaryLength;
+    *(registers+REG_K1) = *(registers+REG_GP);
 
-    	parse_args(argc, argv);
+    up_copyArguments(argc, argv);
 
-    	loadBinary();
+    run(argc, (int*) argv);
 
-    	*(registers+REG_GP) = binaryLength;
+    print(selfieName);
+    print((int*) ": this is selfie's mipster terminating ");
+    print(binaryName);
+    println();
 
-    	*(registers+REG_K1) = *(registers+REG_GP);
-
-    	up_copyArguments(argc-3, argv+3);
-
-	create_ready_queue(5,100);
-
-    	run();
-
-    	exit(0);
-    }
-    if(testvar == 1){
-
-    	initInterpreter();
-
-    	parse_args(argc, argv);
-
-    	loadBinary();
-
-    	*(registers+REG_GP) = binaryLength;
-
-    	*(registers+REG_K1) = *(registers+REG_GP);
-
-    	up_copyArguments(argc-3, argv+3);
-
-	create_segmentation_table(number_of_processes);
-
-    create_ready_queue(number_of_processes,ticks);
-
-	Buffer = (int*)malloc(4*10);
-	print((int*) "--------------------");
-	println();
-	print((int*) "--------------------");
-	println();
-	//Printing the Ready Queue after the creation (PID's and PC's)
-	print((int*) "Ready Queue after Creation");
-	println();
-	print((int*) "PIDs");
-	println();
-	printListPID(ready_queue);
-	print((int*) "PCs");
-	println();
-	printListPC(ready_queue);
-	print((int*) "Segment Start");
-	println();
-	print(itoa(*(running_process+3), Buffer, 10, 0));
-	println();
-
-	//Printing the PID and the PC of the running Process
-	print((int*) "Running Process");
-	println();
-	print((int*) "PID");
-	println();
-	print(itoa(*(running_process), Buffer, 10, 0));
-	println();
-	print((int*) "PID");
-	println();
-	print(itoa(*(running_process+1), Buffer, 10, 0));
-	println();
-	print((int*) "Segment Start");
-	println();
-	print(itoa(*(running_process+3), Buffer, 10, 0));
-	println();
-
-	//Testversion of run of the Emulator
-	runtest();
-
-    	exit(0);
-    }
+    print(selfieName);
+    print((int*) ": profile: total,max(ratio%)@addr(line#),2max(ratio%)@addr(line#),3max(ratio%)@addr(line#)");
+    println();
+    printProfile((int*) ": calls: ", calls, callsPerAddress);
+    printProfile((int*) ": loops: ", loops, loopsPerAddress);
+    printProfile((int*) ": loads: ", loads, loadsPerAddress);
+    printProfile((int*) ": stores: ", stores, storesPerAddress);
 }
 
 // -----------------------------------------------------------------
 // ----------------------------- MAIN ------------------------------
 // -----------------------------------------------------------------
 
+int selfie(int argc, int* argv) {
+    if (argc < 2)
+        return -1;
+    else {
+        while (argc >= 2) {
+            if (stringCompare((int*) *argv, (int*) "-c")) {
+                sourceName = (int*) *(argv+1);
+                binaryName = sourceName;
+
+                argc = argc - 2;
+                argv = argv + 2;
+
+                compile();
+            } else if (stringCompare((int*) *argv, (int*) "-o")) {
+                binaryName = (int*) *(argv+1);
+
+                argc = argc - 2;
+                argv = argv + 2;
+
+                if (binaryLength > 0)
+                    emit();
+                else {
+                    print(selfieName);
+                    print((int*) ": nothing to emit to output file ");
+                    print(binaryName);
+                    println();
+                }
+            } else if (stringCompare((int*) *argv, (int*) "-l")) {
+                binaryName = (int*) *(argv+1);
+
+                argc = argc - 2;
+                argv = argv + 2;
+
+                load();
+            } else if (stringCompare((int*) *argv, (int*) "-m")) {
+                initMemory(atoi((int*) *(argv+1)));
+
+                argc = argc - 1;
+                argv = argv + 1;
+
+                // pass binaryName as first argument replacing size
+                *argv = (int) binaryName;
+
+                if (binaryLength > 0){
+	            print((int*) "here");
+                    println();
+                    emulate(argc, (int*) argv);
+		}
+                else {
+                    print(selfieName);
+                    print((int*) ": nothing to emulate");
+                    println();
+
+                    exit(-1);
+                }
+
+                return 0;
+            } else if (stringCompare((int*) *argv, (int*) "-k")) {
+
+		argc = argc - 1;
+                argv = argv + 1;
+		booting = 1;
+                kOS(argc, (int*) argv);
+
+                return 0;
+            } else if (stringCompare((int*) *argv, (int*) "-t")) {
+		argc = argc - 1;
+                argv = argv + 1;
+
+		testList();
+
+                return 0;
+            } else
+                return -1;
+        }
+    }
+
+    return 0;
+}
+
 int main(int argc, int *argv) {
-    int *firstParameter;
 
     initLibrary();
-
+    initScanner();
     initRegister();
     initDecoder();
 
-    if (argc > 1) {
-        firstParameter = (int*) *(argv+1);
+    initInterpreter();
 
-        if (getCharacter(firstParameter, 0) == '-') {
-            if (getCharacter(firstParameter, 1) == 'c')
-                main_compiler();
-            else if (getCharacter(firstParameter, 1) == 'm') {
-                if (argc > 3) {
-		            testvar = 0;
-                    main_emulator(argc, (int*) argv);
-		        }
-                else {
-                    exit(-1);
-		        }
-            }
-            else if (getCharacter(firstParameter, 1) == '0') {
-                test00();
-            }
-            else if (getCharacter(firstParameter, 1) == 't') {
-                testvar = 1;
-                main_emulator(argc, (int*) argv);
-            }
-            else {
-                exit(-1);
-            }
-        } else {
-            exit(-1);
-        }
-    } else {
-        // default: compiler
-        main_compiler();
+    ticks = 1000000;
+    number_of_processes = 5;
+
+    selfieName = (int*) *argv;
+
+    argc = argc - 1;
+    argv = argv + 1;
+
+    if (selfie(argc, (int*) argv) != 0) {
+        print(selfieName);
+        print((int*) ": usage: selfie { -c source | -o binary | -l binary } [ -m size ... | -k size ... ] ");
+        println();
     }
 }
