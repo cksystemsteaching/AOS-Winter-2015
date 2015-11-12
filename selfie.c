@@ -62,7 +62,7 @@
 // Selfie is the result of many years of teaching systems engineering.
 // The design of the compiler is inspired by the Oberon compiler of
 // Professor Niklaus Wirth from ETH Zurich.
-
+#include<stdio.h>
 int *selfieName = (int*) 0;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -661,6 +661,11 @@ void syscall_malloc();
 void emitYield();
 void syscall_sched_yield();
 
+void emitSwitch();
+void syscall_sched_switch();
+
+void emitGetpid();
+void syscall_getpid();
 
 void emitPutchar();
 
@@ -673,6 +678,8 @@ int SYSCALL_OPEN    = 4005;
 int SYSCALL_MALLOC  = 5001;
 int SYSCALL_GETCHAR = 5002;
 int SYSCALL_YIELD   = 5003;
+int SYSCALL_SWITCH  = 5004;
+int SYSCALL_GETPID  = 5005;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -3265,6 +3272,8 @@ void compile() {
     emitMalloc();
     emitPutchar();
     emitYield();
+    emitSwitch();
+    emitGetpid();
 
     // parser
     gr_cstar();
@@ -3661,6 +3670,51 @@ void load() {
     }
 }
 
+
+
+
+
+
+
+
+void saveContext() {
+        int i;
+        i=0;
+        while (i<32) {
+//              //printf("storing mem (addr: %d)\n", binaryLength + i * 4);
+//              fflush(stdout);
+                storeMemory(binaryLength + i * 4, *(registers + i ));
+                i = i + 1;
+//              //printf("done storing mem\n");
+//              fflush(stdout);
+        }
+        storeMemory(binaryLength + 4*32, reg_lo);
+        storeMemory(binaryLength + 4*33, reg_hi);
+        storeMemory(binaryLength + 4*34, ir);
+        storeMemory(binaryLength + 4*35, pc);
+//	printf("saveContext. pid: %d, pc: %d, ir: %d, reg_lo: %d, reg_hi: %d\n", process_id, pc, ir, reg_lo, reg_hi);
+//      fflush(stdout);
+
+//      //printf("done saving\n");
+//      fflush(stdout);
+}
+void loadContext() {
+        int i;
+        i=0;
+        while (i<32) {
+                *(registers + i) = loadMemory(binaryLength + i * 4);
+                i = i + 1;
+        }
+        reg_lo =        loadMemory(binaryLength + 4*32);
+        reg_hi =        loadMemory(binaryLength + 4*33);
+        ir =            loadMemory(binaryLength + 4*34);
+        pc =            loadMemory(binaryLength + 4*35);
+
+//	printf("loadContext. pid: %d, pc: %d, ir: %d, reg_lo: %d, reg_hi: %d\n", process_id, pc, ir, reg_lo, reg_hi);
+//      fflush(stdout);
+
+}
+
 // -----------------------------------------------------------------
 // --------------------------- SYSCALLS ----------------------------
 // -----------------------------------------------------------------
@@ -3893,7 +3947,6 @@ void syscall_malloc() {
 void emitYield() {
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "sched_yield", binaryLength, FUNCTION, INTSTAR_T, 0);
 
-
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
@@ -3902,14 +3955,12 @@ void emitYield() {
     // remove the argument from the stack
     emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
 
-
     // load the correct syscall number and invoke syscall
     emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_YIELD);
     emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
 
     // jump back to caller, return value is in REG_V0
     emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
-
 }
 
 void syscall_sched_yield() {
@@ -3917,6 +3968,62 @@ void syscall_sched_yield() {
 	fflush(stdout);
 	m = 120;
 }
+
+void emitSwitch() {
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "sched_switch", binaryLength, FUNCTION, INT_T, 0);
+
+
+    emitIFormat(OP_LW, REG_SP, REG_A1, 0); // to-pid
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+
+    emitIFormat(OP_LW, REG_SP, REG_A0, 0); // from-pid
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+
+
+    // load the correct syscall number and invoke syscall
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SWITCH);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // jump back to caller, return value is in REG_V0
+//    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+}
+
+void syscall_sched_switch() {
+		int old;
+		int from_pid;
+		int to_pid;
+
+		from_pid = *(registers+REG_A0);
+		to_pid = *(registers+REG_A1);
+
+		old = process_id;
+		process_id = from_pid; // noetig?
+		//pc = pc + 4;
+                saveContext();
+        	printf(" syscall_switch_from-to: %d->%d\n", from_pid, to_pid);
+                process_id = to_pid;
+        	fflush(stdout);
+                loadContext();
+
+}
+
+
+void emitGetpid() {
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "getpid", binaryLength, FUNCTION, VOID_T, 0);
+
+    // load the correct syscall number and invoke syscall
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_GETPID);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // jump back to caller, return value is in REG_V0
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+}
+
+void syscall_getpid() {
+	// return result in REG_V0
+	*(registers+REG_V0) = process_id;
+}
+
 
 void emitPutchar() {
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "putchar", binaryLength, FUNCTION, INT_T, 0);
@@ -3997,10 +4104,16 @@ void fct_syscall() {
         syscall_malloc();
     } else if (*(registers+REG_V0) == SYSCALL_YIELD) {
         syscall_sched_yield();
+    } else if (*(registers+REG_V0) == SYSCALL_SWITCH) {
+        syscall_sched_switch();
+	return;
+    } else if (*(registers+REG_V0) == SYSCALL_GETPID) {
+        syscall_getpid();
     } else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
     }
 
+//    printf("nextstep:%d->%d\n", pc, pc+4);
     pc = pc + 4;
 }
 
@@ -4398,67 +4511,29 @@ void execute() {
 }
 
 
-void saveContext(int process_id) {
-	int i;
-	i=0;
-	while (i<32) {
-//		//printf("storing mem (addr: %d)\n", binaryLength + i * 4);
-//		fflush(stdout);
-		storeMemory(binaryLength + i * 4, *(registers + i ));
-		i = i + 1;
-//		//printf("done storing mem\n");
-//		fflush(stdout);
-	}
-	storeMemory(binaryLength + 4*32, reg_lo);
-	storeMemory(binaryLength + 4*33, reg_hi);
-	storeMemory(binaryLength + 4*34, ir);
-	storeMemory(binaryLength + 4*35, pc);
-
-//	//printf("done saving\n");
-//	fflush(stdout);
-}
-void loadContext(int process_id) {
-        int i;
-	i=0;
-	while (i<32) {
-		*(registers + i) = loadMemory(binaryLength + i * 4);
-		i = i + 1;
-	}
-	reg_lo = 	loadMemory(binaryLength + 4*32);
-	reg_hi = 	loadMemory(binaryLength + 4*33);
-	ir = 		loadMemory(binaryLength + 4*34);
-	pc = 		loadMemory(binaryLength + 4*35);
-
-//	//printf("done loading\n");
-//	fflush(stdout);
-
-}
 
 void run() {
 	m=0;
 	process_id = 0;
     while (1) {
-//	//printf("pc[%d]: %d\n", process_id, pc);
         fetch();
         decode();
         pre_debug();
         execute();
         post_debug();
 
-	m = m+1;
-        if (m > 120) {
-//		//printf("now switching context\n");
-//		fflush(stdout);
-		m = 0;
-		saveContext(process_id);
-		process_id = process_id + 1;
-		if (process_id == processes ) {
-//			//printf("-A(%d)-", pc);
-			process_id = 0;
-		}
-		////printf("pid: %d\n", process_id);
-		loadContext(process_id);
 
+	// timer interrupt for o/s. simulates external timer. just interrupts non-os pid
+	if (process_id != 0) {
+		m = m+1;
+		if (m > 200) {
+			m = 0;
+	
+			saveContext();
+			process_id = 0; // = O/S
+			loadContext();
+			pc = pc + 4;
+		}
 	}
     }
 }

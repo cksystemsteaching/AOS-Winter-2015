@@ -1,0 +1,121 @@
+############################################
+## Assignment 3: bootstrapping the kernel ##
+############################################
+At the end of this assignment you will have the operating system running on top if mipster along with other processes.
+
+implement the operating system in selfie.c and use the provided flag (-k) to execute the kernel code.
+whenever a trap (e.g. a syscall instruction) or an interrupt (e.g. scheduling timer) happens, the operating is invoked instead of handling the trap or interrupt by the emulator. However, the OS cannot modify the machine state directly, i.e., modifying the memory pointer and registers array is not possible. Therefore:
+provide a special system call, e.g., switch(int previous_process, int next_process) in the emulator that is invoked by the operating system only and modifies the machine state. One issue remains: after the OS invokes switch, the OS process must be reset to interrupt-trap handling mode. You can rely on the following convention: mipster starts executing a binay at address 0x0, the main method of selfie.c. Resetting the PC of the OS process to 0x0 after switch will reset the OS but not its heap and globals. The OS stack must be reset as well. Important: selfie -k must start with interrupt/trap handling. If no interrupt or trap is to be handled, the OS switches to the first ready process. If not ready process exists, the OS loads some_program.mips or terminates.
+
+Deadline: Nov 5, end of day
+
+
+
+Compile and Run:
+================
+$ touch count
+$ gcc selfie.c -o selfie && ./selfie -l count -m 32
+./selfie: loading code from input file count
+./selfie: this is selfie's mipster executing count with 32MB of memory
+KERNEL syscall_switch_from-to: 0->1
+01234567_NEXTKERNEL syscall_switch_from-to: 0->2
+01234567_NEXTKERNEL syscall_switch_from-to: 0->1
+89:;<=>?@_NEXTKERNEL syscall_switch_from-to: 0->2
+89:;<=>?@_NEXTKERNEL syscall_switch_from-to: 0->1
+ABCDEFGHI_NEXTKERNEL syscall_switch_from-to: 0->2
+ABCDEFGHI_NEXTKERNEL syscall_switch_from-to: 0->1
+JKLMNOPQR_NEXTKERNEL syscall_switch_from-to: 0->2
+JKLMNOPQR_NEXTKERNEL syscall_switch_from-to: 0->1
+STUVWXYcount: exiting with error code 8
+$
+
+Interpretation and Explanation of what happened
+===============================================
+selfie's mipster loads 3 processes into its *memory.
+the 1st process (process_id == 0) could be seen as a "kernel".
+the remaining two processes are counters to demonstrate how the kernel works.
+
+all three processes are in count.c. the switch between kernel and other procesesses is handled by
+count.c. a getpid() systemcall is provided for count.c to determine if process should come up as kernel or not.
+
+please note: as soon as exit syscall is emitted the emulator stops working (second running process is not executed to the end) but resolving this issue seems not to be the goal of this assignment.
+
+the characters 'K','E','R','N','E','L' are sent to console to indicate that kernel is running.
+the kernel then switches to the next process, e.g. when switching from 0 to pid 2 it's indicated
+by: 'syscall_switch_from-to: 0->2'.
+
+please note: a timer interrupt is simulated in run(), see snippet:
+-- snip selfie --
+        // timer interrupt for o/s. simulates external timer. just interrupts non-os pid
+        if (process_id != 0) {
+                m = m+1;
+                if (m > 200) {
+                        m = 0;
+
+                        saveContext();
+                        process_id = 0; // = O/S
+                        loadContext();
+                        pc = pc + 4;
+                }
+        }
+
+-- /snip selfie --
+this forces the non-process pids to switch to kernel process. the program counter has to be increased as the syscall from switching from kernel to non-kernel processes (happend before) did not return.
+
+
+please note: 'N','E','X','T' indicates that the kernel code completed.
+
+last note: as i'm working alone on all the issues and the assignments are sequent it is hard to adhere the deadlines. so i am afraid this issue is late again. 
+
+-- snip demo --
+$ more count.c
+int main() {
+	int i;
+	int pid;
+
+	int rr_pid;
+
+	pid = (int)getpid();
+
+	if (pid == 0 ) {
+		rr_pid = 0;
+		while (1) {
+
+			// kernel process
+			putchar('K');
+			putchar('E');
+			putchar('R');
+			putchar('N');
+			putchar('E');
+			putchar('L');
+			
+			rr_pid = rr_pid + 1;
+			if (rr_pid > 2)
+				rr_pid = 1;
+			sched_switch(0, rr_pid);
+			putchar('_');
+			putchar('N');
+			putchar('E');
+			putchar('X');
+			putchar('T');
+
+
+			//sched_yield();
+		}
+		exit(6);
+	} else {
+		// non-kernel processes
+		i=48;
+
+		// print '0' to 'Z' (in asciitable)
+		while (i<90) {
+			putchar(i);
+			i = i+1;
+		}
+		exit(8);
+	}
+
+}
+-- /snip demo --
+
+
