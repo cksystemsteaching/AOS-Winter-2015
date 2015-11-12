@@ -220,22 +220,41 @@ int main(){
     number_buffer = (int*) malloc (10 * 4);
 
     init();
+    
+    lock();
+    //print("something");
+    //putchar(CHAR_LF);
+    
+    printString('W','i','t','h',' ','L','o','c','k',' ',0,0,0,0,0,0,0,0,0,0);
+    putchar(CHAR_LF);
+
+    unlock();
+
+    //lock();
+    //print("somethingElse");
+
+    
+    printString('W','i','t','h','o','u','t',' ','L','o','c','k',' ',0,0,0,0,0,0,0);
+    
+    putchar(CHAR_LF);
+
 
     print(itoa(1, string_buffer, 10, 0));
 
-    
     print(itoa(2, string_buffer, 10, 0));
     print(itoa(3, string_buffer, 10, 0));
     print(itoa(4, string_buffer, 10, 0));
     print(itoa(5, string_buffer, 10, 0));
     putchar(CHAR_LF);
-    yield();
+    //sched_yield();
     print(itoa(6, string_buffer, 10, 0));
     print(itoa(7, string_buffer, 10, 0));
     print(itoa(8, string_buffer, 10, 0));
     print(itoa(9, string_buffer, 10, 0));
     putchar(CHAR_LF);
-    yield();
+
+    //switch();
+    //sched_yield();
 
 
     

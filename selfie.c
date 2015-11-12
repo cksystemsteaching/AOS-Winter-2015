@@ -663,6 +663,15 @@ void syscall_yield();   //ADDED A2
 void emitSwitch();      //ADDED A3
 void syscall_switch();  //ADDED A3
 
+void emitLock();
+void syscall_lock();
+
+void emitUnlock();
+void syscall_unlock();
+
+void emitTrap();
+void syscall_trap();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int SYSCALL_EXIT    = 4001;
@@ -673,6 +682,9 @@ int SYSCALL_MALLOC  = 5001;
 int SYSCALL_GETCHAR = 5002;
 int SYSCALL_YIELD   = 5003; //ADDED A2
 int SYSCALL_SWITCH  = 5004; //ADDED A3
+int SYSCALL_LOCK    = 5005; //ADDED A4
+int SYSCALL_UNLOCK  = 5006; //ADDED A4
+int SYSCALL_TRAP    = 6007; //ADDED A4
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -847,6 +859,12 @@ void saveKernelState(int pc, int *reg, int reg_hi, int reg_lo, int segstart,int 
 void restoreKernelState();
 int tlb_debug = 0;
 void loadProcess(int * name, int id);
+
+//  ------------------ ASSIGNMENT 4 -------------------------------
+
+void interpretEnvent();
+int processLock = 0;
+
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -3126,6 +3144,8 @@ int main_compiler() {
     emitPutchar();
     emitYield();
     emitSwitch();
+    emitLock();
+    emitUnlock();
 
     // parser
     gr_cstar();
@@ -3832,6 +3852,8 @@ void syscall_switch(){
     *(registers+REG_SP) =   *(memory+segSize+18);
     *(registers+REG_K1) =   *(memory+segSize+19);
     
+    numberofInstructions = 0; //reset number of instructions
+    
     *(memory+segSize+10) = 0; //exit
 
     
@@ -3839,7 +3861,7 @@ void syscall_switch(){
 
 
 void emitYield(){
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "yield", binaryLength, FUNCTION, INT_T, 0);
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "sched_yield", binaryLength, FUNCTION, INT_T, 0);
     
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
@@ -3873,6 +3895,57 @@ void syscall_yield(){
     restoreKernelState();
 
 }
+void emitLock(){
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "lock", binaryLength, FUNCTION, INT_T, 0);
+    
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    
+    //emitIFormat(OP_LW, REG_SP, REG_A0, 0); // exit code
+    //emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+    
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_LOCK);
+    emitRFormat(0, 0, 0, 0, FCT_SYSCALL);
+    
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+    
+    
+}
+
+void syscall_lock(){
+    *(memory+segSize+20) = 1; //lock flag
+    
+    syscall_yield();
+
+    
+}
+
+void emitUnlock(){
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "unlock", binaryLength, FUNCTION, INT_T, 0);
+    
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    
+    //emitIFormat(OP_LW, REG_SP, REG_A0, 0); // exit code
+    //emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4);
+    
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_UNLOCK);
+    emitRFormat(0, 0, 0, 0, FCT_SYSCALL);
+    
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+    
+    
+}
+
+void syscall_unlock(){
+    *(memory+segSize+20) = 2; //unlock flag
+    
+    syscall_yield();
+}
+
+
 
 //------------------------------------------------------------------------
 //              MEMORY LAYOUT
@@ -3964,10 +4037,84 @@ int main_os(){
     segmentStart = segmentStart + segSize;
     loadProcess("test.mips",5);
     
+    *(secondSegmentStart+20) = -1;
     
     while(1){
-        print("ENTERING KERNEL ");
-        println();
+        
+        interpretEnvent();
+        
+    }
+    
+   exit(0);
+}
+
+void interpretEnvent(){
+    int *program;
+    int *segment;
+    int *secondSegmentStart;
+    int flag;
+    
+    secondSegmentStart =  2097152*4;
+    flag = *(secondSegmentStart+20);
+    
+    //FLAGS
+    // -1   START, FIRST PROCESS TO BE LOADED
+    //  1   PROCESS CALLED LOCK
+    //  2   PROCESS CALLED UNLOCK
+    //  0   ELSE , LOAD NEW PROCESS
+    
+    
+    if(flag == -1){                            
+        process = pop(readyqueue);
+        segment = getProcessSegPointer(process);
+        
+        *(secondSegmentStart+11) = getProcessPc(process);
+        *(secondSegmentStart+12) = getProcessRegisters(process);
+        *(secondSegmentStart+13) = getProcessRegHi(process);
+        *(secondSegmentStart+14) = getProcessRegLo(process);
+        *(secondSegmentStart+15) = getSegmentStart(segment);
+        *(secondSegmentStart+16) = getProcessId(process);
+        *(secondSegmentStart+17) = getProcessGlobalP(process);
+        *(secondSegmentStart+18) = getProcessStackP(process);
+        *(secondSegmentStart+19) = getProcessK1(process);
+        
+        *(secondSegmentStart+20) = 0;
+
+        *(secondSegmentStart+10) = 1; //switch
+    }
+    
+    if(flag == 1){
+        processLock = getProcessId(process);
+        *(secondSegmentStart+10) = 1; //switch
+    }
+    else if(flag == 2){
+        if(processLock == getProcessId(process)){
+            processLock = 0;
+            *(secondSegmentStart+20) = 0;
+            push(memory,*(secondSegmentStart+12),*(secondSegmentStart+13),*(secondSegmentStart+14),*(secondSegmentStart+11),getProcessId(process),segment,*(secondSegmentStart+17),*(secondSegmentStart+18),*(secondSegmentStart+19),readyqueue);
+            
+            process = pop(readyqueue);
+            segment = getProcessSegPointer(process);
+            
+            *(secondSegmentStart+11) = getProcessPc(process);
+            *(secondSegmentStart+12) = getProcessRegisters(process);
+            *(secondSegmentStart+13) = getProcessRegHi(process);
+            *(secondSegmentStart+14) = getProcessRegLo(process);
+            *(secondSegmentStart+15) = getSegmentStart(segment);
+            *(secondSegmentStart+16) = getProcessId(process);
+            *(secondSegmentStart+17) = getProcessGlobalP(process);
+            *(secondSegmentStart+18) = getProcessStackP(process);
+            *(secondSegmentStart+19) = getProcessK1(process);
+            
+            *(secondSegmentStart+10) = 1; //switch
+            
+        }
+
+    }
+    
+    else{
+        push(memory,*(secondSegmentStart+12),*(secondSegmentStart+13),*(secondSegmentStart+14),*(secondSegmentStart+11),getProcessId(process),segment,*(secondSegmentStart+17),*(secondSegmentStart+18),*(secondSegmentStart+19),readyqueue);
+    
         
         process = pop(readyqueue);
         segment = getProcessSegPointer(process);
@@ -3982,18 +4129,14 @@ int main_os(){
         *(secondSegmentStart+18) = getProcessStackP(process);
         *(secondSegmentStart+19) = getProcessK1(process);
         
-        
         *(secondSegmentStart+10) = 1; //switch
-        println();
-        println();
 
-    
-        *(secondSegmentStart+11) = *(secondSegmentStart+11)+4;//increment pc otherwise it always return to the same instruction s
-        push(memory,*(secondSegmentStart+12),*(secondSegmentStart+13),*(secondSegmentStart+14),*(secondSegmentStart+11),getProcessId(process),segment,*(secondSegmentStart+17),*(secondSegmentStart+18),*(secondSegmentStart+19),readyqueue);
     }
     
-   exit(0);
+    
+    
 }
+
 
 void loadProcess(int * name, int id){
     int *segment;
@@ -4035,25 +4178,38 @@ void fct_syscall() {
 
     if (*(registers+REG_V0) == SYSCALL_EXIT) {
         syscall_exit();
+        pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_READ) {
         syscall_read();
+        pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_WRITE) {
         syscall_write();
+        pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_OPEN) {
         syscall_open();
+        pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_MALLOC) {
         syscall_malloc();
+        pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_GETCHAR) {
         syscall_getchar();
+        pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_YIELD) {
+        pc = pc + 4;
         syscall_yield();
     } else if (*(registers+REG_V0) == SYSCALL_SWITCH) {
         syscall_switch();
+        pc = pc + 4;
+    }else if (*(registers+REG_V0) == SYSCALL_LOCK) {
+        pc = pc + 4;
+        syscall_lock();
+    }else if (*(registers+REG_V0) == SYSCALL_UNLOCK) {
+        pc = pc + 4;
+        syscall_unlock();
     }else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
     }
 
-    pc = pc + 4;
 }
 
 void fct_nop() {
@@ -4457,9 +4613,18 @@ void run(){
         pre_debug();
         execute();
         post_debug();
+
         if(*(memory+segSize+10) == 1){
             syscall_switch();
         }
+        if(numberofInstructions == 25){
+            if(process !=0){
+                syscall_yield();
+        
+            }
+        }
+        
+        numberofInstructions = numberofInstructions + 1;
     }
 
 }
