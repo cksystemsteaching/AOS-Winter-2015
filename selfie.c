@@ -4319,8 +4319,8 @@ void kernel_init(int argc, int* argv) {
     binaryName = (int*) *argv;
     kernel_load_executable(1, 4 * 1024 * 1024, binaryName);
     kernel_load_executable(2, 4 * 1024 * 1024, binaryName);
-    kernel_load_executable(3, 1 * 1024 * 1024, binaryName);
-    kernel_load_executable(4, 3 * 1024 * 1024, binaryName);
+    kernel_load_executable(3, 4 * 1024 * 1024, binaryName);
+    kernel_load_executable(4, 4 * 1024 * 1024, binaryName);
 }
 
 void kernel_run() {
@@ -5112,7 +5112,7 @@ void emulate(int argc, int *argv) {
 
     // Initialize the process and segment tables
     init_segmentation();
-    segment_size = 2 * 1024 * 1024;
+    segment_size = 4 * 1024 * 1024;
 
     copyBinaryToMemory();
 
@@ -5166,7 +5166,7 @@ int *process_init_segment(int pid, int segment_size) {
     list_push_back(g_process_table, process);
 
     g_segment_counter = g_segment_counter + 1;
-    g_next_segment = segment_size;
+    g_next_segment = g_next_segment + segment_size;
 
     if(DEBUG_2) {
         print((int*) "///////////////////////////////////////////////");
@@ -5192,7 +5192,7 @@ int *process_init_segment(int pid, int segment_size) {
         println();
 
         print((int*) "Segment offset: ");
-        printInt(process_get_segment_id(process));
+        printInt(segment_get_start(struct_get_element_at(g_segment_table, process_get_segment_id(process))));
         println();
 
         print((int*) "Segment size: ");
@@ -5357,7 +5357,7 @@ void init_segmentation() {
 
     g_ticks = 0;
     g_interrupts_active = 0;
-    TIME_SLICE = 1000;
+    TIME_SLICE = 5000;
 
     g_kernel_action = KERNEL_SCHEDULE; // TODO: 
 }
