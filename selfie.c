@@ -318,6 +318,17 @@ void process_save(int *process);
 void process_restore(int *process);
 void trap_to_kernel();
 
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT5 --------------------------
+// -----------------------------------------------------------------
+
+void init_machine();
+void init_paging();
+
+void process_init_pagetable(int *process);
+int *process_get_pagetable_at(int *process, int i);
+void process_set_pagetable_at(int *process, int i, int *value);
+
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
 // ---------------------------     kOS   ---------------------------
@@ -342,6 +353,7 @@ int DEBUG_KERNEL;
 int DEBUG_1;
 int DEBUG_2;
 int DEBUG_3;
+int DEBUG_4;
 
 // -----------------------------------------------------------------
 // ----------------------------- LOCK ------------------------------
@@ -425,14 +437,12 @@ void list_swap(int *list, int index1, int index2);
 // Sorts list by the field at FIELD_NR
 void list_sort_by(int *list, int field_nr);
 
-void list_test();
-
 // -----------------------------------------------------------------
 // ---------------------------- PROCESS ----------------------------
 // -----------------------------------------------------------------
 
 int  *process_allocate();
-int  *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_offset, int state);
+int  *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_offset, int state, int *pagetable);
 
 int  process_get_id(int *process);
 int  process_get_pc(int *process);
@@ -442,7 +452,7 @@ int  process_get_reg_hi(int *process);
 int  process_get_reg_lo(int *process);
 int  process_get_segment_id(int *process);
 int  process_get_state(int *process);
-
+int *process_get_pagetable(int *process);
 
 void process_set_id(int *process, int id);
 void process_set_pc(int *process, int pc);
@@ -452,6 +462,7 @@ void process_set_reg_hi(int *process, int reg_hi);
 void process_set_reg_lo(int *process, int reg_lo);
 void process_set_segment_id(int *process, int segment_id);
 void process_set_state(int *process, int state);
+void process_set_pagetable(int *process, int *pagetable);
 
 void print_process_list(int *list);
 
@@ -474,6 +485,9 @@ int  g_next_segment;
 int  g_ticks;
 int  g_interrupts_active;
 int  g_kernel_action;
+
+// PAGING
+int *g_freelist;
 
 // Constants
 int  NUMBER_OF_INSTANCES;
@@ -5111,6 +5125,7 @@ void emulate(int argc, int *argv) {
     println();
 
     // Initialize the process and segment tables
+    init_machine();
     init_segmentation();
     segment_size = 4 * 1024 * 1024;
 
@@ -5136,6 +5151,54 @@ void emulate(int argc, int *argv) {
     up_copyArguments(argc, argv);
 
     run();
+}
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT5 --------------------------
+// -----------------------------------------------------------------
+
+void init_machine() {
+    g_process_table = list_init();
+    g_ticks = 0;
+    g_interrupts_active = 0;
+    g_kernel_action = KERNEL_SCHEDULE;
+
+    TIME_SLICE = 5000;
+    MEMORY_SIZE = 4 * 1024 * 1024;
+}
+
+void init_paging() {
+    g_freelist = (int*)0;
+}
+
+void process_init_pagetable(int *process) {
+    int *pagetable;
+
+    pagetable = struct_init(4* 1024); // TODO: Check if correct
+    process_set_pagetable(process, pagetable);
+
+    if(DEBUG_4) {
+        print((int*) "///////////////////////////////////////////////");
+        println();
+
+        print((int*) "Allocating a new pagetable");
+        println();
+    }
+}
+
+int *process_get_pagetable_at(int *process, int i) {
+    int *pagetable;
+
+    pagetable = process_get_pagetable(process);
+
+    return struct_get_element_at(pagetable, i);
+}
+
+void process_set_pagetable_at(int *process, int i, int *value) {
+    int *pagetable;
+
+    pagetable = process_get_pagetable(process);
+    struct_set_element_at(pagetable, i, value);
 }
 
 // -----------------------------------------------------------------
@@ -5355,11 +5418,7 @@ void init_segmentation() {
     g_next_segment = 0;
     g_segmentation_active = 0;
 
-    g_ticks = 0;
-    g_interrupts_active = 0;
-    TIME_SLICE = 5000;
-
-    g_kernel_action = KERNEL_SCHEDULE; // TODO: 
+    
 }
 
 // -----------------------------------------------------------------
@@ -5817,13 +5876,13 @@ void list_entry_set_data(int *entry, int *data) {
 int  *process_allocate() {
     int *process;
 
-    process = (int*)malloc(7 * 4);
+    process = (int*)malloc(8 * 4);
 
     return process;
 }
 
 // TODO: Change memory to segment
-int *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_id, int state) {
+int *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_id, int state, int *pagetable) {
     int *process;
 
     // process:
@@ -5834,9 +5893,11 @@ int *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_id
     // |  3 | reg_hi           |
     // |  4 | reg_lo           |
     // |  5 | segment_id       |
+    // |  6 | state            |
+    // |  7 | ptr to pagetable |
     // +----+------------------+
 
-    process = (int*)malloc(7 * 4);
+    process = (int*)malloc(8 * 4);
     process_set_id(process, id);
     process_set_pc(process, 0); // Initially always 0
     process_set_registers(process, registers);
@@ -5844,6 +5905,7 @@ int *process_init(int id, int *registers, int reg_hi, int reg_lo, int segment_id
     process_set_reg_lo(process, reg_lo);
     process_set_segment_id(process, segment_id);
     process_set_state(process, state);
+    process_set_pagetable(process, pagetable);
 
     return process;
 }
@@ -5877,6 +5939,10 @@ int process_get_state(int *process) {
     return *(process + 6);
 }
 
+int *process_get_pagetable(int *process) {
+    return (int*)*(process + 7);
+}
+
 // Setters
 void process_set_id(int *process, int id) {
     *process = id;
@@ -5906,6 +5972,9 @@ void process_set_state(int *process, int state) {
     *(process + 6) = state;
 }
 
+void process_set_pagetable(int *process, int *pagetable) {
+    *(process + 7) = (int)pagetable;
+}
 
 void print_process_list(int *list) {
     int i;
@@ -5929,179 +5998,6 @@ void print_process_list(int *list) {
     }
     putchar(']');
     putchar(10); // Linefeed
-}
-
-// -----------------------------------------------------------------
-// ---------------------------- TESTS ------------------------------
-// -----------------------------------------------------------------
-
-void list_test() {
-    int *list;
-    int *process;
-    int *data;
-    int id;
-
-    println();
-    print((int*) "Ready List Test");
-    println();
-
-    list = list_init();
-    process = process_init(1, registers, 0, 0, 0, PROCESS_READY);
-    
-    print((int*) "push front 1");
-    println();
-    list_push_front(list, process);
-    print_process_list(list);
-    
-    print((int*) "pop front ");
-    data = list_entry_get_data(list_pop_front(list));
-    id = process_get_id(data);
-    printInt(id);
-    println();
-    print_process_list(list);
-    
-    list = list_init();
-    
-    print((int*) "push back 1");
-    println();
-    list_push_front(list, process);
-    print_process_list(list);
-    
-    print((int*) "pop front ");
-    data = list_entry_get_data(list_pop_front(list));
-    id = process_get_id(data);
-    printInt(id);
-    println();
-    print_process_list(list);
-    
-    list = list_init();
-    
-    print((int*) "push front 1");
-    println();
-    list_push_front(list, process);
-    print_process_list(list);
-    
-    print((int*) "pop back ");
-    data = list_entry_get_data(list_pop_back(list));
-    id = process_get_id(data);
-    printInt(id);
-    println();
-    print_process_list(list);
-
-    process = process_init(2, registers, 0, 0, 0, PROCESS_READY);
-    
-    print((int*) "push front 2");
-    println();
-    list_push_front(list, process);
-    print_process_list(list);
-
-    process = process_init(3, registers, 0, 0, 0, PROCESS_READY);
-    
-    print((int*) "push back 3");
-    println();
-    list_push_back(list, process);
-    print_process_list(list);
-
-    process = process_init(9, registers, 0, 0, 0, PROCESS_READY);
-
-    print((int*) "push back 9");
-    println();
-    list_push_back(list, process);
-    print_process_list(list);
-
-    process = process_init(4, registers, 0, 0, 0, PROCESS_READY);
-    
-    print((int*) "push front 4");
-    println();
-    list_push_front(list, process);
-    print_process_list(list);
-
-    process = process_init(5, registers, 0, 0, 0, PROCESS_READY);
-    
-    print((int*) "push front 5");
-    println();
-    list_push_front(list, process);
-    print_process_list(list);
-    
-    print((int*) "pop back ");
-    data = list_entry_get_data(list_pop_back(list));
-    id = process_get_id(data);
-    printInt(id);
-    println();
-    print_process_list(list);
-
-    process = process_init(6, registers, 0, 0, 0, PROCESS_READY);
-    
-    print((int*) "insert 6 at 2");
-    println();
-    list_insert_at(list, 2, process);
-    print_process_list(list);
-
-    process = process_init(7, registers, 0, 0, 0, PROCESS_READY);
-    
-    print((int*) "insert 7 at 0");
-    println();
-    list_insert_at(list, 0, process);
-    print_process_list(list);
-    
-    print((int*) "sort list");
-    println();
-    list_sort_by(list, 0);
-    print_process_list(list);
-
-    process = process_init(8, registers, 0, 0, 0, PROCESS_READY);
-    
-    print((int*) "insert 8 at -1");
-    println();
-    list_insert_at(list, -1, process);
-    print_process_list(list);
-    
-    print((int*) "swap 0 and 4");
-    println();
-    list_swap(list, 0, 4);
-    print_process_list(list);
-
-    print((int*) "remove at 3 -> ");
-    data = list_entry_get_data(list_remove_at(list, 3));
-    id = process_get_id(data);
-    printInt(id);
-    println();
-    print_process_list(list);
-
-    print((int*) "remove at 0 -> ");
-    data = list_entry_get_data(list_remove_at(list, 0));
-    id = process_get_id(data);
-    printInt(id);
-    println();
-    print_process_list(list);
-
-    print((int*) "pop front ");
-    data = list_entry_get_data(list_pop_front(list));
-    id = process_get_id(data);
-    printInt(id);
-    println();
-    print_process_list(list);
-
-    print((int*) "remove at 1 -> ");
-    data = list_entry_get_data(list_remove_at(list, 1));
-    id = process_get_id(data);
-    printInt(id);
-    println();
-    print_process_list(list);
-
-    print((int*) "pop front ");
-    data = list_entry_get_data(list_pop_front(list));
-    id = process_get_id(data);
-    printInt(id);
-    println();
-    print_process_list(list);
-
-    print((int*) "pop front ");
-    data = list_entry_get_data(list_pop_front(list));
-    id = process_get_id(data);
-    printInt(id);
-    println();
-    print_process_list(list);
 }
 
 // -----------------------------------------------------------------
@@ -6186,6 +6082,7 @@ int main(int argc, int *argv) {
     DEBUG_1 = 0;
     DEBUG_2 = 0;
     DEBUG_3 = 0;
+    DEBUG_4 = 1;
 
     initLibrary();
     initScanner();
