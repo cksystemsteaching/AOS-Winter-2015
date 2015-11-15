@@ -488,11 +488,15 @@ int  g_kernel_action;
 
 // PAGING
 int *g_freelist;
+int *g_virtual_memory;
+int *g_physical_memory;
+int g_is_running;
 
 // Constants
 int  NUMBER_OF_INSTANCES;
-int  TIME_SLICE;
-int  MEMORY_SIZE;
+int  TIME_SLICE = 5000;
+int  MEMORY_SIZE = 4194304; // 4 MB
+int  PAGE_SIZE = 4096; // 4 KB
 
 // Kernel Modes
 int KERNEL_SCHEDULE = 0;
@@ -4537,9 +4541,31 @@ int lock_blockedqueue_is_empty(int *lock) {
 // -----------------------------------------------------------------
 
 int tlb(int vaddr) {
+    int *pagetable;
+    int page_nr;
 
     if (vaddr % 4 != 0)
         exception_handler(EXCEPTION_ADDRESSERROR);
+
+    page_nr = vaddr / PAGE_SIZE;
+    if(g_is_running) {
+        pagetable = process_get_pagetable(g_running_process);
+
+        if(DEBUG_4) {
+            // print((int*) "TLB: Looking up page at: ");
+            printInt(page_nr);
+            println();
+            // print((int*) "vaddr: ");
+            // printInt(vaddr);
+            // println();
+            // print((int*) "pid: ");
+            // printInt(process_get_id(g_running_process));
+            // println();
+            print((int*) "page table: ");
+            printInt(struct_get_element_at(pagetable, page_nr));
+            println();
+        }
+    }
 
     vaddr = vaddr + g_segment_offset;
 
@@ -5146,10 +5172,12 @@ void emulate(int argc, int *argv) {
     *(registers+REG_K1) = *(registers+REG_GP);
 
     g_running_process = process_init_segment(0, segment_size);
+    process_init_pagetable(g_running_process);
     g_kernel_process = g_running_process;
 
     up_copyArguments(argc, argv);
 
+    g_is_running = 1; // TODO: Is there a better way?
     run();
 }
 
@@ -5162,19 +5190,19 @@ void init_machine() {
     g_ticks = 0;
     g_interrupts_active = 0;
     g_kernel_action = KERNEL_SCHEDULE;
-
-    TIME_SLICE = 5000;
-    MEMORY_SIZE = 4 * 1024 * 1024;
 }
 
 void init_paging() {
     g_freelist = (int*)0;
+    g_virtual_memory = malloc(64 * 1024 * 1024);
+    g_physical_memory = memory;
 }
 
 void process_init_pagetable(int *process) {
     int *pagetable;
+    int i;
 
-    pagetable = struct_init(4* 1024); // TODO: Check if correct
+    pagetable = struct_init(PAGE_SIZE); // TODO: Check if correct
     process_set_pagetable(process, pagetable);
 
     if(DEBUG_4) {
@@ -6079,7 +6107,7 @@ int selfie(int argc, int* argv) {
 
 int main(int argc, int *argv) {
     DEBUG_KERNEL = 0;
-    DEBUG_1 = 0;
+    DEBUG_1 = 1;
     DEBUG_2 = 0;
     DEBUG_3 = 0;
     DEBUG_4 = 1;
