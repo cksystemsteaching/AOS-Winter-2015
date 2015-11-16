@@ -6091,4 +6091,6 @@ int main(int argc, int *argv) {
     initInterpreter();
 
     list_test();
+
+    exit(0);
 }
