@@ -4319,7 +4319,7 @@ void kernel_init(int argc, int* argv) {
     binaryName = (int*) *argv;
     kernel_load_executable(1, 4 * 1024 * 1024, binaryName);
     kernel_load_executable(2, 4 * 1024 * 1024, binaryName);
-    kernel_load_executable(3, 1 * 1024 * 1024, binaryName);
+    kernel_load_executable(3, 4 * 1024 * 1024, binaryName);
     kernel_load_executable(4, 3 * 1024 * 1024, binaryName);
 }
 
@@ -5166,7 +5166,7 @@ int *process_init_segment(int pid, int segment_size) {
     list_push_back(g_process_table, process);
 
     g_segment_counter = g_segment_counter + 1;
-    g_next_segment = segment_size;
+    g_next_segment = g_next_segment + segment_size;
 
     if(DEBUG_2) {
         print((int*) "///////////////////////////////////////////////");
