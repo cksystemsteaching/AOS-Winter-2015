@@ -5999,9 +5999,6 @@ void list_test() {
     printInt(id);
     println();
     print_process_list(list);
-
-    print((int*) "DONE");
-    println();
 }
 
 // -----------------------------------------------------------------
@@ -6094,6 +6091,4 @@ int main(int argc, int *argv) {
     initInterpreter();
 
     list_test();
-
-    exit(0);
 }
