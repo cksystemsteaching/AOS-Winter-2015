@@ -4984,7 +4984,7 @@ int *process_init_segment(int pid, int segment_size) {
     list_push_back(g_process_table, process);
 
     g_segment_counter = g_segment_counter + 1;
-    g_next_segment = segment_size;
+    g_next_segment = g_next_segment + segment_size;
 
     if(DEBUG_2) {
         print((int*) "///////////////////////////////////////////////");
