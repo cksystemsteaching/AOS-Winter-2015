@@ -4271,10 +4271,6 @@ void process_restore(int *process) {
         printInt(g_segment_offset);
         println();
 
-        print((int*) "Register Address: ");
-        printInt(registers);
-        println();
-
         print((int*) "Registers: ");
         i = 0;
         while(i < 32) {
@@ -5035,10 +5031,6 @@ int *process_init_segment(int pid, int segment_size) {
 
         print((int*) "Process table: ");
         print_process_list(g_process_table);
-
-        print((int*) "Register Address: ");
-        printInt(process_get_registers(process));
-        println();
 
         print((int*) "Registers: ");
         i = 0;

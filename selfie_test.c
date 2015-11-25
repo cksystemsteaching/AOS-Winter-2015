@@ -5763,18 +5763,5 @@ int main(int argc, int *argv) {
     
     initInterpreter();
 
-    //print((int*)"this is a test");
-    //println();
     list_test();
-
-    // selfieName = (int*) *argv;
-
-    // argc = argc - 1;
-    // argv = argv + 1;
-
-    // if (selfie(argc, (int*) argv) != 0) {
-    //     print(selfieName);
-    //     print((int*) ": usage: selfie { -c source | -o binary | -l binary } [ -m size ... | -k size ... ] ");
-    //     println();
-    // }
 }
