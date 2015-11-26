@@ -221,14 +221,14 @@ int main(){
 
     init();
     
-    lock();
+    //lock();
     //print("something");
     //putchar(CHAR_LF);
     
     printString('W','i','t','h',' ','L','o','c','k',' ',0,0,0,0,0,0,0,0,0,0);
     putchar(CHAR_LF);
 
-    unlock();
+    //unlock();
 
     //lock();
     //print("somethingElse");
@@ -246,7 +246,7 @@ int main(){
     print(itoa(4, string_buffer, 10, 0));
     print(itoa(5, string_buffer, 10, 0));
     putchar(CHAR_LF);
-    //sched_yield();
+    sched_yield();
     print(itoa(6, string_buffer, 10, 0));
     print(itoa(7, string_buffer, 10, 0));
     print(itoa(8, string_buffer, 10, 0));
@@ -254,7 +254,7 @@ int main(){
     putchar(CHAR_LF);
 
     //switch();
-    //sched_yield();
+    sched_yield();
 
 
     

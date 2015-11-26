@@ -776,7 +776,7 @@ int reg_lo = 0; // lo register for multiplication/division
 
 // -----------------ADDITIONAL METHODS ASSIGNMENT 1 ----------------
 
-void push(int *mem, int *reg, int reg_hi, int reg_lo, int pc,int pId,int *segment,int gp, int sp, int k1, int *head);
+void push(int *mem, int *reg, int reg_hi, int reg_lo, int pc,int pId,int *segment,int gp, int sp, int k1,int *pageTable, int *head);
 
 void setPrcosessNext(int *process, int *next);
 void setProcessPc(int * process, int pc);
@@ -789,6 +789,7 @@ void setProcessSegPointer(int *process, int *segment);
 void setProcessGlobalP(int *process, int gp);
 void setProcessStackP(int *process, int sp);
 void setProcessK1(int *process,int kp);
+void setProcessPageTable(int *process, int *pageTable);
 
 
 int* getProcessNext(int *process);
@@ -802,6 +803,7 @@ int* getProcessSegPointer(int *process);
 int getProcessGlobalP(int *process);
 int getProcessStackP(int *process);
 int getProcessK1(int *process);
+int getProcessPageTable(int *process);
 
 
 void createProcessList(int numberoOfProcesses);
@@ -833,7 +835,9 @@ int numberofInstructions = 0;
 int *process = 0;
 int *segmentTable = 0;
 int segPointer = 0;
-int segSize = 2097152;
+//int segSize = 2097152;
+int segSize = 4194304;
+int communicationSegment = 1048576; //adress for the second segment 1048576*4
 int segmentStart = 0;   //this variable is initalized when scheduler is called
                         // so that it doesn't have to be computed every time
                         // tlb is called
@@ -865,6 +869,20 @@ void loadProcess(int * name, int id);
 void interpretEnvent();
 int processLock = 0;
 
+//  ------------------ ASSIGNMENT 5  -------------------------------
+
+void printMemory(int *memory, int length, int from);
+int palloc(int adr);
+int searchPageTable(int adr);
+void turnOnPaging();
+int getNextFrame();
+
+int *pageTable = 0;
+int *freeList = 0;
+int *realMemory;
+int *virtualMemory;
+int freeListPointer = 1;
+int pagingFlag = 0; //paging turned off
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -3340,34 +3358,66 @@ void decodeJFormat() {
 // -----------------------------------------------------------------
 
 int tlb(int vaddr) {
+    int adr;
     
     if (vaddr % 4 != 0)
         exception_handler(EXCEPTION_ADDRESSERROR);
-
-    if(tlb_debug == 1){
-        if(process !=0){
-            print(itoa(vaddr/4, string_buffer, 10, 0));
-
-            print((int*)" -->  ");
-
-            vaddr = vaddr + segmentStart;
-            print(itoa(vaddr/4, string_buffer, 10, 0));
-            println();
-        }
     
-        else{
-            print(itoa(vaddr/4, string_buffer, 10, 0));
-            println();
+    //if paging is enabled and it is not kernel process
+    if(pagingFlag == 1){
+        if(segmentStart !=0){
+            adr = searchPageTable(vaddr);
+            return adr/4;
         }
     }
     else{
-        if(process !=0){
-            vaddr = vaddr + segmentStart;
+        if(tlb_debug == 1){
+            if(process !=0){
+                print(itoa(vaddr/4, string_buffer, 10, 0));
+
+                print((int*)" -->  ");
+
+                vaddr = vaddr + segmentStart;
+                print(itoa(vaddr/4, string_buffer, 10, 0));
+                println();
+            }
+    
+            else{
+                print(itoa(vaddr/4, string_buffer, 10, 0));
+                println();
+            }
+        }
+        else{
+            if(segmentStart !=0){
+                vaddr = vaddr + segmentStart;
+            }
         }
     }
-
     // physical memory is word-addressed for lack of byte-sized data type
     return vaddr / 4;
+}
+
+int searchPageTable(int vaddr){
+    int i;
+    int frame;
+    int offest;
+    
+    frame = vaddr/4096;
+    offest = vaddr%4096;
+    
+    if(*(pageTable+frame)==0){
+        *(pageTable+frame) = freeList;
+        memCopy(virtualMemory+(segmentStart+frame*4096)/4, freeList,1024);
+        freeList = freeList+1024;
+        
+        return *(pageTable+frame)-(int)(memory)+offest;
+    }
+    else{
+            return *(pageTable+frame)-(int)(memory)+offest;
+        
+    }
+    
+ 
 }
 
 int loadMemory(int vaddr) {
@@ -3835,26 +3885,33 @@ void syscall_switch(){
     
     saveKernelState(pc,registers,reg_hi,reg_lo,segmentStart,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1));
     
-    if(*(memory+segSize+12) == 0){
+    if(*(memory+communicationSegment+12) == 0){
         registers = malloc(32*4);
     }
     else{
-        registers           =   *(memory+segSize+12);
+        registers           =   *(memory+communicationSegment+12);
+    }
+
+    if(*(memory+communicationSegment+20) == 0){
+        pageTable = malloc(4*1024); //ADDED A5
+    }
+    else{
+        pageTable = *(memory+communicationSegment+20);
     }
 
     
-    pc                  =   *(memory+segSize+11);
-    reg_hi              =   *(memory+segSize+13);
-    reg_lo              =   *(memory+segSize+14);
-    segmentStart        =   *(memory+segSize+15);
-    process             =   *(memory+segSize+16);
-    *(registers+REG_GP) =   *(memory+segSize+17);
-    *(registers+REG_SP) =   *(memory+segSize+18);
-    *(registers+REG_K1) =   *(memory+segSize+19);
+    pc                  =   *(memory+communicationSegment+11);
+    reg_hi              =   *(memory+communicationSegment+13);
+    reg_lo              =   *(memory+communicationSegment+14);
+    segmentStart        =   *(memory+communicationSegment+15);
+    process             =   *(memory+communicationSegment+16);
+    *(registers+REG_GP) =   *(memory+communicationSegment+17);
+    *(registers+REG_SP) =   *(memory+communicationSegment+18);
+    *(registers+REG_K1) =   *(memory+communicationSegment+19);
     
     numberofInstructions = 0; //reset number of instructions
     
-    *(memory+segSize+10) = 0; //exit
+    *(memory+communicationSegment+10) = 0; //exit
 
     
 }
@@ -3881,16 +3938,16 @@ void emitYield(){
 void syscall_yield(){
  
     
-    *(memory+segSize+11) = pc;
-    *(memory+segSize+12) = registers;
-    *(memory+segSize+13) = reg_hi;
-    *(memory+segSize+14) = reg_lo;
-    *(memory+segSize+15) = segmentStart;
-    *(memory+segSize+16) = process;
-    *(memory+segSize+17) = *(registers+REG_GP);
-    *(memory+segSize+18) = *(registers+REG_SP);
-    *(memory+segSize+19) = *(registers+REG_K1);
-
+    *(memory+communicationSegment+11) = pc;
+    *(memory+communicationSegment+12) = registers;
+    *(memory+communicationSegment+13) = reg_hi;
+    *(memory+communicationSegment+14) = reg_lo;
+    *(memory+communicationSegment+15) = segmentStart;
+    *(memory+communicationSegment+16) = process;
+    *(memory+communicationSegment+17) = *(registers+REG_GP);
+    *(memory+communicationSegment+18) = *(registers+REG_SP);
+    *(memory+communicationSegment+19) = *(registers+REG_K1);
+    *(memory+communicationSegment+20) = pageTable;
     
     restoreKernelState();
 
@@ -3914,7 +3971,7 @@ void emitLock(){
 }
 
 void syscall_lock(){
-    *(memory+segSize+20) = 1; //lock flag
+    *(memory+communicationSegment+30) = 1; //lock flag
     
     syscall_yield();
 
@@ -3940,7 +3997,7 @@ void emitUnlock(){
 }
 
 void syscall_unlock(){
-    *(memory+segSize+20) = 2; //unlock flag
+    *(memory+communicationSegment+30) = 2; //unlock flag
     
     syscall_yield();
 }
@@ -3977,27 +4034,27 @@ void syscall_unlock(){
 
 void saveKernelState(int pc, int *reg, int reg_hi, int reg_lo, int segStart,int gp,int sp, int k1){
     
-    *(memory+segSize) = pc;
-    *(memory + segSize+1) = reg;
-    *(memory + segSize+2) = reg_hi;
-    *(memory + segSize+3) = reg_lo;
-    *(memory + segSize+4) = segStart;
-    *(memory + segSize+5) = gp;
-    *(memory + segSize+6) = sp;
-    *(memory + segSize+7) = k1;
+    *(memory+communicationSegment) = pc;
+    *(memory + communicationSegment+1) = reg;
+    *(memory + communicationSegment+2) = reg_hi;
+    *(memory + communicationSegment+3) = reg_lo;
+    *(memory + communicationSegment+4) = segStart;
+    *(memory + communicationSegment+5) = gp;
+    *(memory + communicationSegment+6) = sp;
+    *(memory + communicationSegment+7) = k1;
     
 }
 
 void restoreKernelState(){
      process =0;
-    pc                  = *(memory + segSize);
-    registers           = *(memory + segSize + 1);
-    reg_hi              = *(memory + segSize + 2);
-    reg_lo              = *(memory + segSize + 3);
+    pc                  = *(memory + communicationSegment);
+    registers           = *(memory + communicationSegment + 1);
+    reg_hi              = *(memory + communicationSegment + 2);
+    reg_lo              = *(memory + communicationSegment + 3);
     segmentStart        = 0;
-    *(registers+REG_GP) = *(memory + segSize + 5);
-    *(registers+REG_SP) = *(memory + segSize + 6);
-    *(registers+REG_K1) = *(memory + segSize + 7);
+    *(registers+REG_GP) = *(memory + communicationSegment + 5);
+    *(registers+REG_SP) = *(memory + communicationSegment + 6);
+    *(registers+REG_K1) = *(memory + communicationSegment + 7);
    
 }
 
@@ -4016,28 +4073,29 @@ int main_os(){
     int *segment;
     int *secondSegmentStart;
     
-    secondSegmentStart =  2097152*4;
-    segSize = 2097152;
-    segmentStart = 2097152*2;
-
+    secondSegmentStart =  4*1024*1024;
+    segSize = 4*1024*1024;
+    segmentStart = 4*1024*1024*2;
     
     segPointer =segmentStart;
     memory = 0;
     initInterpreter();
     readyqueue = 0;
+    
     loadProcess("test.mips",2);
     segmentStart = segmentStart + segSize;
     loadProcess("test.mips",3);
-    
-    //BUG becasue it is actually saving kernel process and user process in 4th segment it has to be skipped
-    segmentStart = segmentStart + segSize+segSize;// + segSize;
-    segPointer = segPointer + segSize;
-    
+    segmentStart = segmentStart + segSize;
     loadProcess("test.mips",4);
     segmentStart = segmentStart + segSize;
     loadProcess("test.mips",5);
     
-    *(secondSegmentStart+20) = -1;
+   
+    
+    *(secondSegmentStart+40) = 1;//turn on paging
+
+    *(secondSegmentStart+30) = -1;  //set flag to -1
+
     
     while(1){
         
@@ -4054,8 +4112,8 @@ void interpretEnvent(){
     int *secondSegmentStart;
     int flag;
     
-    secondSegmentStart =  2097152*4;
-    flag = *(secondSegmentStart+20);
+    secondSegmentStart =  4*1024*1024;
+    flag = *(secondSegmentStart+30);
     
     //FLAGS
     // -1   START, FIRST PROCESS TO BE LOADED
@@ -4077,21 +4135,23 @@ void interpretEnvent(){
         *(secondSegmentStart+17) = getProcessGlobalP(process);
         *(secondSegmentStart+18) = getProcessStackP(process);
         *(secondSegmentStart+19) = getProcessK1(process);
+        *(secondSegmentStart+20) = getProcessPageTable(process);
         
-        *(secondSegmentStart+20) = 0;
+        *(secondSegmentStart+30) = 0;
 
         *(secondSegmentStart+10) = 1; //switch
     }
     
-    if(flag == 1){
+    else if(flag == 1){
         processLock = getProcessId(process);
         *(secondSegmentStart+10) = 1; //switch
     }
     else if(flag == 2){
+        
         if(processLock == getProcessId(process)){
             processLock = 0;
-            *(secondSegmentStart+20) = 0;
-            push(memory,*(secondSegmentStart+12),*(secondSegmentStart+13),*(secondSegmentStart+14),*(secondSegmentStart+11),getProcessId(process),segment,*(secondSegmentStart+17),*(secondSegmentStart+18),*(secondSegmentStart+19),readyqueue);
+            *(secondSegmentStart+30) = 0;
+            push(memory,*(secondSegmentStart+12),*(secondSegmentStart+13),*(secondSegmentStart+14),*(secondSegmentStart+11),getProcessId(process),segment,*(secondSegmentStart+17),*(secondSegmentStart+18),*(secondSegmentStart+19),*(secondSegmentStart+20),readyqueue);
             
             process = pop(readyqueue);
             segment = getProcessSegPointer(process);
@@ -4105,6 +4165,7 @@ void interpretEnvent(){
             *(secondSegmentStart+17) = getProcessGlobalP(process);
             *(secondSegmentStart+18) = getProcessStackP(process);
             *(secondSegmentStart+19) = getProcessK1(process);
+            *(secondSegmentStart+20) = getProcessPageTable(process);
             
             *(secondSegmentStart+10) = 1; //switch
             
@@ -4113,7 +4174,7 @@ void interpretEnvent(){
     }
     
     else{
-        push(memory,*(secondSegmentStart+12),*(secondSegmentStart+13),*(secondSegmentStart+14),*(secondSegmentStart+11),getProcessId(process),segment,*(secondSegmentStart+17),*(secondSegmentStart+18),*(secondSegmentStart+19),readyqueue);
+        push(memory,*(secondSegmentStart+12),*(secondSegmentStart+13),*(secondSegmentStart+14),*(secondSegmentStart+11),getProcessId(process),segment,*(secondSegmentStart+17),*(secondSegmentStart+18),*(secondSegmentStart+19),*(secondSegmentStart+20),readyqueue);
     
         
         process = pop(readyqueue);
@@ -4128,6 +4189,7 @@ void interpretEnvent(){
         *(secondSegmentStart+17) = getProcessGlobalP(process);
         *(secondSegmentStart+18) = getProcessStackP(process);
         *(secondSegmentStart+19) = getProcessK1(process);
+        *(secondSegmentStart+20) = getProcessPageTable(process);
         
         *(secondSegmentStart+10) = 1; //switch
 
@@ -4143,7 +4205,7 @@ void loadProcess(int * name, int id){
 
     binaryName = name;
     binaryLength = 0;
-    process =5;
+    //process =5;
     loadBinary();
     
     *(registers+REG_GP) = binaryLength;
@@ -4155,7 +4217,7 @@ void loadProcess(int * name, int id){
     
     segment = insertSegment(id,segPointer,segSize,segmentTable);
     segPointer = segPointer + segSize; //increment segmentPointer
-    push(memory,0,reg_hi,reg_lo,pc,id,segment,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1),readyqueue);
+    push(memory,0,reg_hi,reg_lo,pc,id,segment,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1),pageTable,readyqueue);
 
 }
 
@@ -4198,8 +4260,8 @@ void fct_syscall() {
         pc = pc + 4;
         syscall_yield();
     } else if (*(registers+REG_V0) == SYSCALL_SWITCH) {
-        syscall_switch();
         pc = pc + 4;
+        syscall_switch();
     }else if (*(registers+REG_V0) == SYSCALL_LOCK) {
         pc = pc + 4;
         syscall_lock();
@@ -4614,14 +4676,17 @@ void run(){
         execute();
         post_debug();
 
-        if(*(memory+segSize+10) == 1){
+        if(*(memory+communicationSegment+10) == 1){
             syscall_switch();
         }
-        if(numberofInstructions == 25){
-            if(process !=0){
-                syscall_yield();
+        //if(numberofInstructions == 25){
+        //    if(process !=0){
+         //       syscall_yield();
         
-            }
+         //   }
+        //}
+        if(*(memory+communicationSegment+40) == 1){
+            turnOnPaging();
         }
         
         numberofInstructions = numberofInstructions + 1;
@@ -4766,6 +4831,44 @@ int main_emulator(int argc, int *argv) {
 
 }
 
+void turnOnPaging(){
+    virtualMemory = memory;
+    memory =  malloc(64 * 1024 * 1024);
+    freeList = (memory + 2097152);      //paging after second segment
+    
+    memCopy(virtualMemory,memory,2097152); //copy OS segment and communication segment
+    pagingFlag = 1;
+    *(memory+communicationSegment+40) = 2; //turn of syscall
+    
+}
+
+void printMemory(int *adr, int length, int from){
+    int i;
+    int j;
+    j = 0;
+    i=from;
+    print("Memory number, Memory adress, Memory value");
+    println();
+    while(i<length){
+        if(*(memory+i) != 0){
+            print(itoa(i,string_buffer,10,0));
+            print(",  ");
+            print(itoa(i*4,string_buffer,10,0));
+            print(": ");
+            print(itoa(*(memory+i),string_buffer,10,0));
+            println();
+            j = j+1;
+        }
+        i = i+1;
+    }
+    print("Total number of adresses: ");
+    print(itoa(j,string_buffer,10,0));
+    println();
+    
+}
+
+
+
 
 // ----------------------------------------------------------------
 // ---------------------ASSIGNMENT 1,2 ------------------------------
@@ -4816,7 +4919,7 @@ void createProcess(int *head, int pId){
     if((int)(head) == 0 ){
         segment = insertSegment(pId,segPointer,segSize,segmentTable);
         segPointer = segPointer + segSize; //increment segmentPointer
-        push(memory,registers,reg_hi,reg_lo,pc,pId,segment,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1),readyqueue);
+        push(memory,registers,reg_hi,reg_lo,pc,pId,segment,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1),pageTable,readyqueue);
     }
     else{
         segment = insertSegment(pId,segPointer,segSize,segmentTable);
@@ -4834,12 +4937,12 @@ void createProcess(int *head, int pId){
         newRegHi = reg_hi;
         newRegLo = reg_lo;
         
-        push(memory,newRegisters,newRegHi,newRegLo,newPC,pId,segment,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1),readyqueue);
+        push(memory,newRegisters,newRegHi,newRegLo,newPC,pId,segment,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1),pageTable,readyqueue);
         
     }
 }
 
-void push(int *memory, int *registers, int reg_hi, int reg_lo, int pc, int pId, int *segment, int gp, int sp, int k1, int *head){
+void push(int *memory, int *registers, int reg_hi, int reg_lo, int pc, int pId, int *segment, int gp, int sp, int k1,int *pageTable ,int *head){
     
     int  *adr;
     
@@ -4858,7 +4961,7 @@ void push(int *memory, int *registers, int reg_hi, int reg_lo, int pc, int pId, 
     // | 10 | k1         |
     // +----+------------+
     
-    adr = (int*)malloc (11*4);
+    adr = (int*)malloc (12*4);
     
     setPrcosessNext(adr,head);
     setProcessPc(adr,pc);
@@ -4871,6 +4974,8 @@ void push(int *memory, int *registers, int reg_hi, int reg_lo, int pc, int pId, 
     setProcessGlobalP(adr,gp);
     setProcessStackP(adr,sp);
     setProcessK1(adr,k1);
+    setProcessPageTable(adr,pageTable);
+
     
     readyqueue = adr;
     
@@ -4947,6 +5052,9 @@ void setProcessStackP(int *process, int sp){
 void setProcessK1(int *process, int k1){
     *(process+10) = k1;
 }
+void setProcessPageTable(int *process, int *pageTable){
+    *(process+11) = pageTable;
+}
 
 int* getProcessNext(int *process){
     return (int*) *process;
@@ -4987,6 +5095,9 @@ int getProcessStackP(int *process){
 }
 int getProcessK1(int *process){
     return *(process+10);
+}
+int getProcessPageTable(int *process){
+    return *(process+11);
 }
 
 int * insertSegment (int pId, int start, int size, int *head){
@@ -5052,7 +5163,7 @@ void scheduler(){
     segment = getProcessSegPointer(process);
     
     //save the process state
-    push(memory,registers,reg_hi,reg_lo,pc,pId,segment,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1),readyqueue);
+    push(memory,registers,reg_hi,reg_lo,pc,pId,segment,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1),pageTable,readyqueue);
     
     //get the next process
     process = pop(readyqueue);
