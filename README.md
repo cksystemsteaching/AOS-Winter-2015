@@ -97,3 +97,20 @@ Assignment 5: Virtual Memory
 * page replacement and swapping is not required in this assignment
 
 * Deadline: November 26, end of day
+
+Assignment 6 + 7: Towards Mikro Kernels
+---------------------------------------
+
+1. In the emulator implement a microkernel that supports context and page table programming. You will need at least create_context, switch_context, delete_context, map_page_in_context, and flush_page_in_context. We distinguish these five calls into the microkernel from all other syscalls and call them hypercalls. create_context returns a unique ID to identify the new context, switch_context switches contexts, delete_context deletes contexts and recycles IDs, map_page_in_context creates a mapping for a virtual page, and flush_page_in_context unmaps it again. The key simplification is that the microkernel maintains contexts and page tables in the emulator. All processes are now in virtual memory including the OS.
+
+Deadline: December 10, end of day
+
+
+Until Dec 17 implement also:
+
+2. On top of the emulator your OS in a single process that manages user processes as before but uses the microkernel in the emulator for switching. This process should have all of its virtual memory mapped 1-to-1 to physical memory. For paging the OS process may maintain its own copies of user page tables (in addition to the page tables in the microkernel) and also the free-list of page frames (most of the heap part of the virtual pages of the OS process become the page frames of user processes). This way the OS can read and write all user process memory, e.g. for loading code. Port the syscalls for your OS (fork, wait, lock, etc.) such that they lead to a "trap" into the microkernel which then switches contexts to the OS process to handle them. For this purpose use the $v0-v1 and $a0-a3 registers as before to have the OS process figure out what to do.
+
+3. Similarly, all other events (timer interrupts, page faults) should also lead to "traps" into the microkernel which then make the microkernel also switch contexts to the OS process to handle them. Make sure that the OS process always runs to completion and is not interrupted by anything. This means the OS process sees something to do whenever it returns from context switching to a user process.
+
+
+
