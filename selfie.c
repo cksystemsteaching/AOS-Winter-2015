@@ -277,14 +277,12 @@ int* ready_queue;
 int* process_list;
 // number of instructions for one process in one run
 int numb_of_instr;
-// Size of Segment
-int segment_size;
 // Address of the actual running process
 int* running_process;
 // Address of the kernel process
 int* kernel_process;
-// Segmentation Table
-int* segmentation_table;
+// Frame Table
+int* frame_table;
 // Number of ticks each Process can run
 int ticks;
 // Number of Processes
@@ -300,7 +298,13 @@ int* blocked_queue;
 // Global lock
 int* lock;
 // Debugging Variable for locking which indicates the next Process who needs the lock
-int debug_locking = 1;	
+int debug_locking = 1;
+// one page has 4 KB size
+int PAGE_SIZE = 4096;
+// one frame has 4 KB size
+int FRAME_SIZE = 4096;
+// Current frame number
+int current_frame_number;
 
 int* prev_node;
 int* prev_process;
@@ -308,15 +312,15 @@ int* next_node;
 int* next_process;
 
 void create_ready_queue(int n, int m);
-int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo, int segment_number);
-void create_segmentation_table(int segments);
-int* initializeList(int *list); 
+int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo);
+void create_frame_table();
+int* create_page_table(int* page_table);
+int* initializeList(int *list);
 int* addToList(int *list, int data);
 void printListPID(int *list);
 void printListPC(int *list);
-void printListSegment(int *list);
 int sizeOfList(int *list);
-int getNodeFromList(int *list, int nthNode); 
+int getNodeFromList(int *list, int nthNode);
 int* deleteFirstNodeFromList(int *list);
 int* getNodeByIdFromProcessList(int id);
 void schedule_and_switch();
@@ -620,7 +624,7 @@ int OP_BNE     = 5;
 int OP_ADDIU   = 9;
 int OP_LW      = 35;
 int OP_SW      = 43;
-    
+
 int *OPCODES; // array of strings representing MIPS opcodes
 
 int FCT_NOP     = 0;
@@ -796,17 +800,22 @@ int memorySize = 0; // size of memory in bytes
 
 int *memory = (int*) 0; // mipster memory
 
+// Initializing the size of the virtual memory
+int virtual_memory_size = 0;
+
 // ------------------------- INITIALIZATION ------------------------
 
-void initMemory(int bytes) {
-    if (bytes < 0)
-        memorySize = 64 * MEGABYTE;
-    else if (bytes > 1024 * MEGABYTE)
-        memorySize = 1024 * MEGABYTE;
-    else
-        memorySize = bytes;
+void initMemory(int megabytes) {
+    if (megabytes < 0)
+        megabytes = 64;
+    else if (megabytes > 1024)
+        megabytes = 1024;
 
+    // Initializing the physical memory
+    memorySize = megabytes * 1024 * 1024;
     memory = malloc(memorySize);
+
+    virtual_memory_size = 4 * 1024 * 1024;
 }
 
 // -----------------------------------------------------------------
@@ -999,7 +1008,7 @@ int* storeCharacter(int *s, int i, int c) {
     a = i / 4;
 
     *(s + a) = (*(s + a) - leftShift(loadCharacter(s, i), (i % 4) * 8)) + leftShift(c, (i % 4) * 8);
-    
+
     return s;
 }
 
@@ -1024,7 +1033,7 @@ void stringReverse(int *s) {
 
     while (i < j) {
         tmp = loadCharacter(s, i);
-        
+
         storeCharacter(s, i, loadCharacter(s, j));
         storeCharacter(s, j, tmp);
 
@@ -1070,7 +1079,7 @@ int atoi(int *s) {
             return -1;
 
         n = n * 10 + c;
-        
+
         i = i + 1;
 
         c = loadCharacter(s, i);
@@ -1203,7 +1212,7 @@ int* itoa(int n, int *s, int b, int a, int p) {
             i = i + 2;
         }
     }
-    
+
     storeCharacter(s, i, 0); // null terminated string
 
     stringReverse(s);
@@ -1267,7 +1276,7 @@ void printString(int *s) {
     putCharacter(CHAR_DOUBLEQUOTE);
 
     print(s);
-    
+
     putCharacter(CHAR_DOUBLEQUOTE);
 }
 
@@ -1307,7 +1316,7 @@ void syntaxErrorMessage(int *message) {
     printLineNumber((int*) "error");
 
     print(message);
-    
+
     println();
 }
 
@@ -1512,7 +1521,7 @@ int getSymbol() {
             storeCharacter(integer, i, character);
 
             i = i + 1;
-            
+
             getCharacter();
         }
 
@@ -1577,7 +1586,7 @@ int getSymbol() {
             storeCharacter(string, i, character);
 
             i = i + 1;
-            
+
             getCharacter();
         }
 
@@ -1687,7 +1696,7 @@ int getSymbol() {
         printLineNumber((int*) "error");
         print((int*) "found unknown character ");
         printCharacter(character);
-        
+
         println();
 
         exit(-1);
@@ -1739,7 +1748,7 @@ int* getSymbolTableEntry(int *string, int class, int *symbol_table) {
         if (stringCompare(string, getString(symbol_table)))
             if (class == getClass(symbol_table))
                 return symbol_table;
-        
+
         // keep looking
         symbol_table = getNext(symbol_table);
     }
@@ -2258,7 +2267,7 @@ int gr_call(int *procedure) {
 
         if (symbol == SYM_RPARENTHESIS) {
             getSymbol();
-            
+
             type = help_call_codegen(entry, procedure);
         } else {
             syntaxErrorSymbol(SYM_RPARENTHESIS);
@@ -2400,9 +2409,9 @@ int gr_factor() {
         emitIFormat(OP_ADDIU, REG_ZR, currentTemporary(), constant);
 
         getSymbol();
-    
+
         type = INT_T;
-        
+
     // string?
     } else if (symbol == SYM_STRING) {
         load_string();
@@ -2452,7 +2461,7 @@ int gr_term() {
         rtype = gr_factor();
 
         // assert: allocatedTemporaries == n + 2
-        
+
         if (ltype != rtype)
             typeWarning(ltype, rtype);
 
@@ -2498,7 +2507,7 @@ int gr_simpleExpression() {
 
         if (isINTMINConstant) {
             isINTMINConstant = 0;
-            
+
             // avoids 0-INT_MIN overflow when bootstrapping
             // even though 0-INT_MIN == INT_MIN
             sign = 0;
@@ -2636,7 +2645,7 @@ int gr_expression() {
             emitIFormat(OP_ADDIU, REG_ZR, currentTemporary(), 0);
         }
     }
-    
+
     // assert: allocatedTemporaries == n + 1
 
     return ltype;
@@ -2817,7 +2826,7 @@ void gr_return(int returnType) {
 
         // save value of expression in return register
         emitRFormat(OP_SPECIAL, REG_ZR, currentTemporary(), REG_V0, FCT_ADDU);
-        
+
         tfree(1);
     }
 
@@ -2984,7 +2993,7 @@ int gr_type() {
     int type;
 
     type = INT_T;
-    
+
     if (symbol == SYM_INT) {
         getSymbol();
 
@@ -3056,7 +3065,7 @@ void gr_initialization(int *name, int offset, int type) {
 
             if (isINTMINConstant) {
                 isINTMINConstant = 0;
-            
+
                 // avoids 0-INT_MIN overflow when bootstrapping
                 // even though 0-INT_MIN == INT_MIN
                 sign = 0;
@@ -3150,7 +3159,7 @@ void gr_procedure(int *procedure, int returnType) {
     // ( variable, variable ) { variable; variable; statement }
     } else if (symbol == SYM_LBRACE) {
         functionStart = binaryLength;
-        
+
         getSymbol();
 
         entry = getSymbolTableEntry(currentProcedureName, FUNCTION, global_symbol_table);
@@ -3583,7 +3592,7 @@ void emitInstruction(int instruction) {
         exit(-1);
     } else {
         storeInstruction(binaryLength, instruction);
-        
+
         binaryLength = binaryLength + 4;
     }
 }
@@ -3696,7 +3705,7 @@ void emitGlobalsStrings() {
 
 void emit() {
     int fd;
-    
+
     fd = open(binaryName, O_CREAT_WRONLY_TRUNC, S_IRUSR_IWUSR_IRGRP_IROTH);
 
     if (fd < 0) {
@@ -3754,7 +3763,7 @@ void load() {
 
     if (numberOfReadBytes == 4) {
         codeLength = *io_buffer;
-        
+
         // now read binary
         numberOfReadBytes = read(fd, binary, maxBinaryLength);
 
@@ -4023,17 +4032,17 @@ void emitPutchar() {
 }
 
 void emitSchedYield() {
-    
+
     // create Symbol Table Entroy for yield
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "sched_yield", binaryLength, FUNCTION, INT_T, 0);
-    
+
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SCHED_YIELD);
-    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL); 
-    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);  
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 
 }
 
@@ -4051,17 +4060,17 @@ void syscall_sched_yield(){
 }
 
 void emitSwitch() {
-    
+
     // create Symbol Table Entry for swapoff
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "switch", binaryLength, FUNCTION, INT_T, 0);
-    
+
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SWITCH);
-    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL); 
-    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);  
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 
 }
 
@@ -4072,11 +4081,11 @@ void syscall_switch() {
 		prev_node = getNodeByIdFromProcessList(running_process_id);
 		prev_process = (int*) (prev_node);
 
-		syscall_getpid();		
+		syscall_getpid();
 
 		next_node = getNodeByIdFromProcessList(running_process_id);
 		next_process = (int*) (next_node);
-		
+
 		*(running_process + 1) = *(running_process + 1) + 1;
 
 		running_process = next_process ;
@@ -4109,11 +4118,11 @@ void syscall_switch() {
 		next_node = getNodeByIdFromProcessList(0);
 		next_process = (int*) (next_node);
 
-		running_process = next_process;	
+		running_process = next_process;
 
 		ready_queue = addToList(ready_queue, (int) prev_process);
 		println();
-		println();	
+		println();
 		println();
 		println();
 		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
@@ -4126,8 +4135,8 @@ void syscall_switch() {
 		println();
 		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 		println();
-	
-	}	
+
+	}
 
 }
 
@@ -4149,7 +4158,7 @@ void syscall_mlock() {
 	*lock = *(running_process);
 
 	println();
-	println();	
+	println();
 	println();
 	println();
 	print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
@@ -4195,9 +4204,9 @@ void syscall_munlock() {
 		node = (int*) getNodeFromList(blocked_queue, new_size);
 		process = (int*) *(node + 1);
 		blocked_queue = deleteFirstNodeFromList(blocked_queue);
-		ready_queue = addToList(ready_queue,(int) process);	
+		ready_queue = addToList(ready_queue,(int) process);
 		i = i + 1;
-	}	
+	}
 }
 
 void emitGetpid() {
@@ -4243,17 +4252,17 @@ int* getNodeByIdFromProcessList(int id){
 	int* Buffer;
 
 	i = 0;
-	
+
 	Buffer = (int*)malloc(4*10);
-	
+
 	while(i < all_processes) {
 		node_i = (int*) getNodeFromList(process_list, i);
-		process_i = (int*) *(node_i + 1);		
-				
+		process_i = (int*) *(node_i + 1);
+
 		j = (int) *(process_i);
-		
+
 		if(j == id){
-		
+
 			return process_i;
 		}
 		i = i + 1;
@@ -4267,7 +4276,7 @@ void create_process_List(int number){
 	int *process;
 	int pid_process_list;
 	int pid_ready_queue;
-	
+
 
 	pid_process_list = 0;
 	pid_ready_queue = number_of_processes - 1;
@@ -4281,15 +4290,15 @@ void create_process_List(int number){
 		else{
 			node = (int*) getNodeFromList(ready_queue, pid_ready_queue);
 			process = (int*) *(node+1);
-			process_list = addToList(process_list, (int) process);	
+			process_list = addToList(process_list, (int) process);
 			pid_process_list = pid_process_list + 1;
-			pid_ready_queue = pid_ready_queue - 1;				
+			pid_ready_queue = pid_ready_queue - 1;
 		}
 	}
 }
 
 // ------------------------ DATA STRUCTURE FOR THE LOCK -----------------------
-// Creating a the Lock with Process ID which holds the Lock 
+// Creating a the Lock with Process ID which holds the Lock
 // and a Pointer to the Blocked Queue
 void create_lock(){
 
@@ -4302,7 +4311,7 @@ void create_lock(){
 // Sort the list with Bubble Sort
 int* sortListByPC(int *list) {
 
-	int size; 
+	int size;
 	int i;
 	int *listNodeX;
 	int *listNodeY;
@@ -4311,8 +4320,8 @@ int* sortListByPC(int *list) {
 	int *listProcessY;
 	int listProcessPCX;
 	int listProcessPCY;
-	int* Buffer;	
-	
+	int* Buffer;
+
 	Buffer = (int*)malloc(4*10);
 	size = sizeOfList(list);
 
@@ -4334,14 +4343,14 @@ int* sortListByPC(int *list) {
 				listProcessY = (int*) *(listNodeY + 1);
 				listProcessPCX = *(listProcessX+1);
 				listProcessPCY = *(listProcessY+1);
-				
+
 				println();
 				print(itoa(listProcessPCX, Buffer, 10, 0, 0));
 				println();
 
 				println();
 				print(itoa(listProcessPCY, Buffer, 10, 0, 0));
-				println();				
+				println();
 
 				if(listProcessPCX < listProcessPCY) {
 					print((int*) "change");
@@ -4371,18 +4380,15 @@ int* sortListByPC(int *list) {
 	 	print((int*) "PCs");
 	 	println();
 	 	printListPC(ready_queue);
-		print((int*) "Segment Start");
-	 	println();
-		printListSegment(ready_queue);
 
 	return list;
 }
 
 void runOS(int argc, int* argv){
-	
-	int* Buffer;	
+
+	int* Buffer;
 	Buffer = (int*)malloc(4*10);
-	
+
 
 	while(1){
 		println();
@@ -4411,9 +4417,6 @@ void runOS(int argc, int* argv){
 		print((int*) "PCs");
 		println();
 		printListPC(process_list);
-	    	print((int*) "Segment Start");
-	    	println();
-	    	printListSegment(process_list);
 		print((int*) "____________________________________________________");
 	 	println();
 	 	print((int*) "This is the Ready-Queue before running Kernel");
@@ -4426,9 +4429,6 @@ void runOS(int argc, int* argv){
 	 	print((int*) "PCs");
 	 	println();
 	 	printListPC(ready_queue);
-		print((int*) "Segment Start");
-	 	println();
-		printListSegment(ready_queue);
 		print((int*) "____________________________________________________");
 	 	println();
 	 	print((int*) "This is the Blocked-Queue before running Kernel");
@@ -4441,9 +4441,6 @@ void runOS(int argc, int* argv){
 	 	print((int*) "PCs");
 	 	println();
 	 	printListPC(blocked_queue);
-		print((int*) "Segment Start");
-	 	println();
-		printListSegment(blocked_queue);
 		print((int*) "____________________________________________________");
 		println();
 		print((int*) "This is the Running Process before running Kernel");
@@ -4457,10 +4454,6 @@ void runOS(int argc, int* argv){
 		print((int*) "PC");
 		println();
 		print(itoa(*(running_process+1), Buffer, 10, 0, 0));
-		println(); 
-		print((int*) "Segment Start");
-		println();
-		print(itoa(*(running_process+3), Buffer, 10, 0, 0));
 		println();
 
 		syscall_switch();
@@ -4487,9 +4480,6 @@ void runOS(int argc, int* argv){
 		print((int*) "PCs");
 		println();
 		printListPC(process_list);
-	    	print((int*) "Segment Start");
-	    	println();
-	    	printListSegment(process_list);
 		print((int*) "____________________________________________________");
 		println();
 		println();
@@ -4504,9 +4494,6 @@ void runOS(int argc, int* argv){
 	 	print((int*) "PCs");
 	 	println();
 	 	printListPC(ready_queue);
-	 	print((int*) "Segment Start");
-	 	println();
-	 	printListSegment(ready_queue);
 		print((int*) "____________________________________________________");
 		println();
 		println();
@@ -4521,9 +4508,6 @@ void runOS(int argc, int* argv){
 		print((int*) "PCs");
 		println();
 		printListPC(blocked_queue);
-	    	print((int*) "Segment Start");
-	    	println();
-	    	printListSegment(blocked_queue);
 		print((int*) "____________________________________________________");
 		println();
 		println();
@@ -4539,28 +4523,24 @@ void runOS(int argc, int* argv){
 		print((int*) "PC");
 		println();
 		print(itoa(*(running_process+1), Buffer, 10, 0, 0));
-		println(); 
-		print((int*) "Segment Start");
-		println();
-		print(itoa(*(running_process+3), Buffer, 10, 0, 0));
 		println();
 
 		if(debug_locking == 1){
 			if(*lock == 0){
 				syscall_mlock();
 				debug_locking = 0;
-				run(argc, (int*) argv);						
+				run(argc, (int*) argv);
 			}
 			else if(*lock == *running_process){
-				
-				syscall_munlock();	
+
+				syscall_munlock();
 
 				ready_queue = sortListByPC(ready_queue);
 
-				debug_locking = 0;		
+				debug_locking = 0;
 
 				println();
-				println();	
+				println();
 				println();
 				println();
 				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
@@ -4575,14 +4555,14 @@ void runOS(int argc, int* argv){
 				println();
 				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 				println();
-				run(argc, (int*) argv);		
+				run(argc, (int*) argv);
 			}
 			else{
 				blocked_queue = addToList(blocked_queue, (int) running_process);
 				running_process = kernel_process;
 
 				println();
-				println();	
+				println();
 				println();
 				println();
 				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
@@ -4595,21 +4575,21 @@ void runOS(int argc, int* argv){
 				println();
 				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 				println();
-				debug_locking = 0;				
+				debug_locking = 0;
 			}
 		}
 		else{
 
 			if(*lock == *running_process){
-				
+
 				syscall_munlock();
 
 				ready_queue = sortListByPC(ready_queue);
 
-				debug_locking = 0;	
+				debug_locking = 0;
 
 				println();
-				println();	
+				println();
 				println();
 				println();
 				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
@@ -4624,11 +4604,11 @@ void runOS(int argc, int* argv){
 				println();
 				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 				println();
-				run(argc, (int*) argv);		
+				run(argc, (int*) argv);
 			}
 			else{
 				println();
-				println();	
+				println();
 				println();
 				println();
 				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
@@ -4642,9 +4622,9 @@ void runOS(int argc, int* argv){
 				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 				println();
 				debug_locking = 1;
-				run(argc, (int*) argv);	
+				run(argc, (int*) argv);
 			}
-		}				
+		}
 	}
 
 }
@@ -4652,25 +4632,36 @@ void runOS(int argc, int* argv){
 void kOS(int argc, int* argv) {
 	int *new_reg;
 	int* Buffer;
-	
+
 	if(booting == 1){
 
 		booting = 0;
 
 		new_reg = malloc(4*32);
 		Buffer = (int*)malloc(4*10);
-	
+
 		all_processes = number_of_processes + 1;
 
-		kernel_process = create_process(0, new_reg, reg_hi, reg_lo, 0);
+		kernel_process = create_process(0, new_reg, reg_hi, reg_lo);
 		running_process = kernel_process;
 
-		create_segmentation_table(all_processes);
+		current_frame_number = 0;
+
+		create_frame_table();
+
+		println();
+		print((int*) "Memory Size");
+		println();
+
+		println();
+		print(itoa(memorySize, Buffer, 10, 0, 0));
+		println();
+
 		create_ready_queue(all_processes, ticks);
 		create_process_List(all_processes);
 		blocked_queue = initializeList(blocked_queue);
 		create_lock();
-		
+
 		println();
 		println();
 		println();
@@ -4697,9 +4688,6 @@ void kOS(int argc, int* argv) {
 		print((int*) "PCs");
 		println();
 		printListPC(process_list);
-	    	print((int*) "Segment Start");
-	    	println();
-	    	printListSegment(process_list);
 		print((int*) "____________________________________________________");
 		println();
 		print((int*) "This is the Ready-Queue after Booting");
@@ -4712,9 +4700,6 @@ void kOS(int argc, int* argv) {
 		print((int*) "PCs");
 		println();
 		printListPC(ready_queue);
-	    	print((int*) "Segment Start");
-	    	println();
-	    	printListSegment(ready_queue);
 
 		print((int*) "____________________________________________________");
 		println();
@@ -4728,16 +4713,13 @@ void kOS(int argc, int* argv) {
 		print((int*) "PCs");
 		println();
 		printListPC(blocked_queue);
-	    	print((int*) "Segment Start");
-	    	println();
-	    	printListSegment(blocked_queue);
 
 		print((int*) "____________________________________________________");
 		println();
 		print((int*) "This is the Running-Process after Booting");
 		println();
 		print((int*) "____________________________________________________");
-		println();	
+		println();
 		print((int*) "PID");
 		println();
 		print(itoa(*(running_process), Buffer, 10, 0, 0));
@@ -4745,15 +4727,11 @@ void kOS(int argc, int* argv) {
 		print((int*) "PC");
 		println();
 		print(itoa(*(running_process+1), Buffer, 10, 0, 0));
-		println(); 
-		print((int*) "Segment Start");
 		println();
-		print(itoa(*(running_process+3), Buffer, 10, 0, 0));
-		println();
-		
+
 		runOS(argc, (int*) argv);
 	}
-	
+
 	else{
 		runOS(argc, (int*) argv);
 	}
@@ -5582,7 +5560,7 @@ void printListPC(int *list) {
 
 	int counter;
 	int number;
-	int *Buffer; 	
+	int *Buffer;
 	int *node;
 	int *process;
 
@@ -5592,28 +5570,6 @@ void printListPC(int *list) {
 		node = (int*) getNodeFromList(list, counter);
 		process = (int*) *(node+1);
 		number = *(process+1);
-		Buffer = (int*)malloc(4*10);
-    		print(itoa(number, Buffer, 10, 0, 0));
-		putchar(CHAR_LF);
-		counter = counter - 1;
-	}
-}
-
-// Print the value of the Segment Starts
-void printListSegment(int *list) {
-
-	int counter;
-	int number;
-	int *Buffer; 	
-	int *node;
-	int *process;
-
-	counter = sizeOfList(list)-1;
-
-	while(counter >= 0) {
-		node = (int*) getNodeFromList(list, counter);
-		process = (int*) *(node+1);
-		number = *(process+3);
 		Buffer = (int*)malloc(4*10);
     		print(itoa(number, Buffer, 10, 0, 0));
 		putchar(CHAR_LF);
@@ -5632,7 +5588,7 @@ void run(int argc, int* argv) {
 
 	instr = instr + 1;
 	*(running_process + 1) = *(running_process + 1) + 1;
-		
+
 	if(instr == numb_of_instr){
 		halt = 1;
 	}
@@ -5757,9 +5713,9 @@ int fixedPointRatio(int a, int b) {
     int r;
 
     // compute fixed point ratio r with 2 fractional digits
-    
+
     r = 0;
-    
+
     // multiply a/b with 100 but avoid overflow
 
     if (a <= INT_MAX / 100) {
@@ -5788,11 +5744,11 @@ int printCounters(int total, int *counters, int max) {
     a = addressWithMaxCounter(counters, max);
 
     print(itoa(*(counters + a / 4), string_buffer, 10, 0, 0));
-    
+
     print((int*) "(");
     print(itoa(fixedPointRatio(total, *(counters + a / 4)), string_buffer, 10, 0, 2));
     print((int*) "%)");
-    
+
     if (*(counters + a / 4) != 0) {
         print((int*) "@");
         print(itoa(a, string_buffer, 16, 8, 0));
@@ -5847,7 +5803,7 @@ void disassemble(int argc, int* argv) {
     debug     = 1;
 
     copyBinaryToMemory();
-    
+
     resetInterpreter();
 
     run(argc, (int*) argv);
@@ -5925,12 +5881,12 @@ int* deleteFirstNodeFromList(int *list) {
 	*prev = 0;
 	*next = 0;
 	size = sizeOfList(list);
-	
+
 	if(size == 1){
 		list = initializeList(list);
 	}
 	else{
-		
+
 		prev = (int*) getNodeFromList(list, size-2);
 		next = (int*) getNodeFromList(list, size);
 		*prev = (int) next;
@@ -5942,7 +5898,7 @@ int* deleteFirstNodeFromList(int *list) {
 // Sort the list with Bubble Sort
 int* sortList(int *list) {
 
-	int size; 
+	int size;
 	int i;
 	int *listitemX;
 	int *listitemY;
@@ -5982,9 +5938,9 @@ void printList(int *list) {
 
 	int counter;
 	int *nodeNumber;
-	int number; 
-	int *Buffer; 	
-	
+	int number;
+	int *Buffer;
+
 	counter = sizeOfList(list)-1;
 
 	while(counter >= 0) {
@@ -6004,7 +5960,7 @@ int testList() {
 	// Create new linked list (FIFO Linked List):
 	// top -> [9,7,8,2,4,1,5,3] -> bottom
 	print((int*) "Insert into list");
-	println();	
+	println();
 	list = initializeList(list);
 	list = addToList(list, 9);
  	list = addToList(list, 7);
@@ -6019,7 +5975,7 @@ int testList() {
 	// Delete the first node (FIFO Linked List):
 	// top -> [2,4,1,5,3] -> bottom
 	print((int*) "Delete first Node");
-	println();	
+	println();
 	list = deleteFirstNodeFromList(list); //9
 	list = deleteFirstNodeFromList(list); //7
 	list = deleteFirstNodeFromList(list); //8
@@ -6033,84 +5989,129 @@ int testList() {
 	// Sorting the list
 	// top -> [5,4,3,2,1] -> bottom
 	print((int*) "Sorting the List");
-	println();	
+	println();
 	list = sortList(list);
 	printList(list);
 
 	exit(0);
 }
 
-// ------------------------ DATA STRUCTURE FOR A SEGMENT -----------------------
-// Creating a new Segment with Startaddress (start) and Size (size).
-int* create_segment(int* start){
-	//initialization of the process	
-	int* segment;	
+// ------------------------ DATA STRUCTURE FOR A PAGE TABLE ENTRY -----------------------
+// Creating a new Page table entry with physical Address and virtual Address.
+int* create_page_table_entry(int* physical_address, int* virtual_address){
+	//initialization of the process
+	int* page_table_entry;
 	//memory allocation
-	segment = malloc (2 * 4);
-	
-	//initalization of the argments of the process 
-	*segment = (int) start;
-	*(segment+1) = segment_size;
-	
-	return segment;
+	page_table_entry = malloc (2 * 4);
+
+	//initalization of the argments of the process
+	*page_table_entry = (int) physical_address;
+	*(page_table_entry+1) = (int) virtual_address;
+
+	return page_table_entry;
 }
 
-// ------------------------ Segment Table ----------------------------------------
-void create_segmentation_table(int segments){
-	int *Buffer;
-	int memory_size;
+// partition the emulated memory (like physical memory on a real machine) into 4KB
+// frames
+// ------------------------ Frame Table ----------------------------------------
+void create_frame_table(){
+
+	int i;
+	int* address;
+	int* Buffer;
+	int number_of_frames;
+
+	i = 0;
 
 	Buffer = (int*)malloc(4*10);
 
-	segment_size = 1024 * 1024 / 4;
-	memory_size = segments * segment_size;
-	segmentation_table = (int*)malloc(segments * 4);
-	memory = (int*)malloc(memory_size);	
+	number_of_frames = memorySize / FRAME_SIZE;
+
+	frame_table = initializeList(frame_table);
+
+	while(i < number_of_frames){
+		address = (int*) (i * FRAME_SIZE);
+		frame_table = addToList(frame_table, (int) address);
+		print((int*) "Frame number");
+		println();
+		print(itoa(i, Buffer, 10, 0, 0));
+		println();
+		print((int*) "Frame address");
+		println();
+		print(itoa((int)address, Buffer, 10, 0, 0));
+		println();
+		i = i + 1;
+	}
 }
 
+// Virtual address space is organised in 4KB pages
+// ------------------------ Page Table ----------------------------------------
+int* create_page_table(int* page_table){
+
+	int number_of_pages;
+
+	number_of_pages = virtual_memory_size / PAGE_SIZE;
+
+	page_table = initializeList(page_table);
+
+	return page_table;
+}
+
+
 // ------------------------ DATA STRUCTURE FOR A PROCESS -----------------------
-// Creating a new Process with Process ID (new_pid), Programm Counter (new_pc), 
+// Creating a new Process with Process ID (new_pid), Programm Counter (new_pc),
 // Address to the Register (new_reg), Address to the Memory (new_mem),
 // hi register for multiplication/division (new_reg_hi) and
 // lo register for multiplication/division (new_reg_lo) and
-int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo, int segment_number){
-	//initialization of the process	
+int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo){
+	//initialization of the process
 	int* process;
-	int start_n_segment;	
-	int* segment; 
 	int* start;
-
-	//memory allocation
-	process = malloc (7 * 4);	
+	int* page_table;
+	int* virtual_memory;
+	int* Buffer;
+	Buffer = (int*)malloc(4*10);
 
 	if(new_pid == 0){
 
-		//initalization of the argments of the process 
+		process = malloc (6 * 4);
+
+		//initalization of the arugments of the process
 		*process = new_pid;
 		*(process+1) = 0;
 		*(process+2) = (int) new_reg;
-		*(process+3) = (int) memory;
+		*(process+3) = * memory;
 		*(process+4) = new_reg_hi;
 		*(process+5) = new_reg_lo;
-		*(process+6) = segment_number;
-	
+
 		return process;
 	}
 	else{
-		start_n_segment = segment_number * segment_size;
-		start = (int*) (*(memory) + start_n_segment);
-		segment = (int*) create_segment(start);
 
+		process = malloc (7 * 4);
+    		virtual_memory = malloc(virtual_memory_size);
 
-		//initalization of the argments of the process 
+		print((int*) "Virtual Memory");
+		println();
+		print(itoa((int)virtual_memory, Buffer, 10, 0, 0));
+		println();
+		print((int*) "Virtual Memory Size");
+		println();
+		print(itoa(virtual_memory_size, Buffer, 10, 0, 0));
+		println();
+
+		page_table = create_page_table(page_table);
+
+		//initalization of the argments of the process
 		*process = new_pid;
 		*(process+1) = 0;
 		*(process+2) = (int) new_reg;
-		*(process+3) = *segment;
+		//each process gets a 4MB virtual address space.
+		*(process+3) = * virtual_memory;
 		*(process+4) = new_reg_hi;
 		*(process+5) = new_reg_lo;
-		*(process+6) = segment_number;
-	
+		*(process+6) = (int) page_table;
+
 		return process;
 	}
 }
@@ -6124,7 +6125,7 @@ void schedule_and_switch(){
 		print((int*) "empty---------");
 		println();
 		return;
-	}	
+	}
 	//else the processes have to be switched so that the next process from the ready queue is allowed to run
 	else{
 		// 1. Saving the states of the running process in the ready queue
@@ -6134,7 +6135,7 @@ void schedule_and_switch(){
 		running_process = (int*) *(node+1);
 
 		// 3. Delete the first Process from ready queue because it is the running process
-		ready_queue = deleteFirstNodeFromList(ready_queue);			
+		ready_queue = deleteFirstNodeFromList(ready_queue);
 	}
 }
 
@@ -6144,20 +6145,17 @@ void create_ready_queue(int n, int m){
 	int *new_process;
 	int pid;
 	int *new_reg;
-	int segment_number;
-	
+
 	numb_of_instr = m;
 	pid = 1;
-	segment_number = 1;
 	ready_queue = initializeList(ready_queue);
 	running_process_id = 0;
 
 	while(pid < n){
 		new_reg = malloc(4*32);
-		new_process = create_process(pid, new_reg, reg_hi, reg_lo, segment_number);
+		new_process = create_process(pid, new_reg, reg_hi, reg_lo);
 		ready_queue = addToList(ready_queue, (int) new_process);
 		pid = pid + 1;
-		segment_number = segment_number + 1;
 	}
 }
 
@@ -6184,7 +6182,8 @@ void emulate(int argc, int *argv) {
 
     up_copyArguments(argc, argv);
 
-    run(argc, (int*) argv);
+    //run(argc, (int*) argv);
+    kOS(argc, (int*) argv);
 
     print(selfieName);
     print((int*) ": this is selfie's mipster terminating ");
@@ -6225,7 +6224,7 @@ int selfie(int argc, int* argv) {
 
                 if (binaryLength > 0)
                     emit();
-                else {                    
+                else {
                     print(selfieName);
                     print((int*) ": nothing to emit to output file ");
                     print(binaryName);
@@ -6265,6 +6264,7 @@ int selfie(int argc, int* argv) {
 
                 if (binaryLength > 0) {
                     debug = 0;
+		    booting = 1;
 
                     emulate(argc, argv);
                 } else {
@@ -6299,6 +6299,7 @@ int selfie(int argc, int* argv) {
 
                 return 0;
             } else if (stringCompare((int*) *argv, (int*) "-k")) {
+		initMemory(atoi((int*) *(argv+1)) * MEGABYTE);
 
 		argc = argc - 1;
                 argv = argv + 1;
@@ -6322,17 +6323,17 @@ int selfie(int argc, int* argv) {
 }
 
 int main(int argc, int *argv) {
-    
+
 
     initLibrary();
     initScanner();
     initRegister();
     initDecoder();
-    
+
     initInterpreter();
 
-    ticks = 10000000;
-    number_of_processes = 10;
+    ticks = 1000000000;
+    number_of_processes = 16;
 
     selfieName = (int*) *argv;
 
