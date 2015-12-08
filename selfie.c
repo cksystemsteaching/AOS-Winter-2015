@@ -324,18 +324,25 @@ void trap_to_kernel();
 
 void init_machine();
 void init_paging();
-void activate_paging();
 
 void process_init_pagetable(int *process);
 int  *process_get_pagetable_at(int *process, int i);
 void process_set_pagetable_at(int *process, int i, int *value);
 
-int  *page_fault(int *process, int page_nr);
+void page_fault(int pid, int vaddr, int memory_position);
 void page_load(int *virt_addr, int *phys_addr);
 
 void load_to_virt_memory();
 
-int  palloc();
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT6 --------------------------
+// -----------------------------------------------------------------
+
+void create_kernel_context(int argc, int *argv);
+int  check_page(int vaddr);
+void print_virt_memory();
+void print_phys_memory();
+void print_registers();
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -343,6 +350,14 @@ int  palloc();
 // -----------------------------------------------------------------
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 
+// A6
+void kernel_create_context(int pid, int *filename);
+void kernel_delete_context(int pid);
+void kernel_map_page_in_context(int pid);
+void kernel_flush_page_in_context(int pid, int page_nr);
+void kernel_palloc(int pid);
+
+// A3
 void kernel(int argc, int* argv);
 void kernel_init(int argc, int* argv);
 void kernel_run();
@@ -363,6 +378,7 @@ int DEBUG_2;
 int DEBUG_3;
 int DEBUG_4;
 int DEBUG_5;
+int DEBUG_6;
 
 // -----------------------------------------------------------------
 // ----------------------------- LOCK ------------------------------
@@ -495,6 +511,10 @@ int  g_ticks;
 int  g_interrupts_active;
 int  g_kernel_action;
 
+// A6
+int  g_page_fault;
+int  g_page_fault_vaddr;
+
 // PAGING
 int  g_freelist;
 int  *g_virtual_memory;
@@ -511,6 +531,7 @@ int  PAGE_SIZE = 4096; // 4 KB
 int KERNEL_SCHEDULE = 0;
 int KERNEL_LOCK = 1;
 int KERNEL_UNLOCK = 2;
+int KERNEL_PAGE_FAULT = 3;
 
 // Process States
 int PROCESS_RUNNING = 0;
@@ -917,6 +938,22 @@ void syscall_getpid();
 void emitSignal();
 void syscall_signal();
 
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT6 --------------------------
+// -----------------------------------------------------------------
+
+void emitMmap();
+void syscall_mmap();
+
+void emitMadvise();
+void syscall_madvise();
+
+void emitLseek();
+void syscall_lseek();
+
+void emitMsync();
+void syscall_msync();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int SYSCALL_EXIT    = 4001;
@@ -935,6 +972,11 @@ int SYSCALL_MLOCK = 5006;
 int SYSCALL_MUNLOCK = 5007;
 int SYSCALL_GETPID = 5008;
 int SYSCALL_SIGNAL = 5009;
+// A6
+int SYSCALL_MMAP = 5010;
+int SYSCALL_MADVISE = 5011;
+int SYSCALL_LSEEK = 5012;
+int SYSCALL_MSYNC = 5013;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -3430,6 +3472,11 @@ void compile() {
     emitMunlock();
     emitGetpid();
     emitSignal();
+    // A6
+    emitMmap();
+    emitMadvise();
+    emitLseek();
+    emitMsync();
 
     // parser
     gr_cstar();
@@ -4072,9 +4119,9 @@ void emitSchedYield() {
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "sched_yield", binaryLength, FUNCTION, INT_T, 0);
 
     // sched_yield doesn't have any arguments
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SCHED_YIELD);
     emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
@@ -4194,6 +4241,7 @@ void syscall_select() {
     process_restore(next_process);
     // We loaded a user process so we turn on interrupts again
     g_interrupts_active = 1;
+    g_paging_active = 1;
 }
 
 // -----------------------------------------------------------------
@@ -4205,9 +4253,9 @@ void emitMlock() {
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "mlock", binaryLength, FUNCTION, INT_T, 0);
 
     // sched_yield doesn't have any arguments
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_MLOCK);
     emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
@@ -4234,9 +4282,9 @@ void emitMunlock() {
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "munlock", binaryLength, FUNCTION, INT_T, 0);
 
     // sched_yield doesn't have any arguments
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_MUNLOCK);
     emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
@@ -4264,9 +4312,9 @@ void emitGetpid() {
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "getpid", binaryLength, FUNCTION, INT_T, 0);
 
     // sched_yield doesn't have any arguments
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_GETPID);
     emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
@@ -4297,9 +4345,9 @@ void emitSignal() {
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "signal", binaryLength, FUNCTION, INT_T, 0);
 
     // sched_yield doesn't have any arguments
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SIGNAL);
     emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
@@ -4323,11 +4371,186 @@ void syscall_signal() {
     *(registers+REG_V0) = g_kernel_action;
 }
 
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT6 --------------------------
+// -----------------------------------------------------------------
+
+void emitMmap() {
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "mmap", binaryLength, FUNCTION, INT_T, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+
+    emitIFormat(OP_LW, REG_SP, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // vaddr
+
+    emitIFormat(OP_LW, REG_SP, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // PID
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_MMAP);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+// Allocates a page
+void syscall_mmap() {
+    int size;
+    int bump;
+    int pid;
+    int vaddr;
+
+    // The size is always our default PAGE_SIZE
+    size = PAGE_SIZE;
+
+    // The only argument we need is the PID (for page table entries)
+    pid = *(registers+REG_A0);
+    vaddr = *(registers+REG_A1);
+    bump = *(registers+REG_K1);
+
+    if (bump + size >= *(registers+REG_SP))
+        exception_handler(EXCEPTION_HEAPOVERFLOW);
+
+    *(registers+REG_K1) = bump + size;
+    *(registers+REG_V0) = bump;
+
+    page_fault(pid, vaddr, bump);
+
+    if(DEBUG_6) {
+        print((int*) "System call mmap");
+        println();
+        print((int*) "Allocating a page of size: ");
+        printInt(size);
+        println();
+        print((int*) "For process: ");
+        printInt(pid);
+        println();
+        print((int*) "vaddr: ");
+        printInt(vaddr);
+        println();
+        print((int*) "New REG_K1: ");
+        printInt(*(registers+REG_K1));
+        println();
+        print((int*) "New REG_V0: ");
+        printInt(*(registers+REG_V0));
+        println();
+    }
+}
+
+void emitMadvise() {
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "madvise", binaryLength, FUNCTION, INT_T, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_MADVISE);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+void syscall_madvise() {
+    *(registers + REG_V0) = g_page_fault_vaddr;
+}
+
+void emitLseek() {
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "lseek", binaryLength, FUNCTION, INT_T, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+
+    emitIFormat(OP_LW, REG_SP, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // vaddr
+
+    emitIFormat(OP_LW, REG_SP, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // PID
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_LSEEK);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+void syscall_lseek() {
+    int pid;
+    int page_nr;
+    int *process;
+    int *pagetable;
+
+    pid = *(registers + REG_A0);
+    page_nr = *(registers + REG_A1);
+
+    process = list_entry_get_data(list_find_entry_by(g_process_table, pid, 0));
+    pagetable = process_get_pagetable(process);
+    struct_set_element_at(pagetable, page_nr, (int*)0);
+}
+
+void emitMsync() {
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "msync", binaryLength, FUNCTION, INT_T, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+
+    emitIFormat(OP_LW, REG_SP, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, 4); // PID
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_MSYNC);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // We don't have a return value so we just jump back
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR); // REG_RA instead of REG_LINK
+}
+
+void syscall_msync() {
+    int pid;
+
+    pid = *(registers + REG_A0);
+
+    list_remove_entry_by(g_process_table, pid, 0);
+}
+
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
 // ---------------------------     kOS   ---------------------------
 // -----------------------------------------------------------------
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT6 --------------------------
+// -----------------------------------------------------------------
+
+void kernel_create_context(int pid, int *filename) {
+    kernel_load_executable(pid, 4 * 1024 * 1024, filename);
+}
+
+void kernel_delete_context(int pid) {
+    // Delete context from the kernel page table ...
+    list_remove_entry_by(g_process_table, pid, 0);
+    // as well as from the emulator page table
+    msync(pid);
+}
+
+void kernel_map_page_in_context(int pid) {
+    int vaddr;
+
+    vaddr = madvise();
+    mmap(pid, vaddr);
+    kernel_switch_to_process(g_running_process);
+}
+
+void kernel_flush_page_in_context(int pid, int page_nr) {
+    lseek(pid, page_nr);
+}
+
+void kernel_palloc(int pid) {
+    kernel_map_page_in_context(pid);
+}
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT3 --------------------------
+// -----------------------------------------------------------------
 
 void kernel(int argc, int* argv) {
     kernel_init(argc, argv);
@@ -4335,15 +4558,21 @@ void kernel(int argc, int* argv) {
 }
 
 void kernel_init(int argc, int* argv) {
+    // A3
     g_readyqueue = list_init();
     g_lock = lock_init();
     g_running_process = (int*) 0;
+    // A6
+    g_segment_counter = 0;
+    g_next_segment = 4 * 1024 * 1024; // 4MB are reserved for the kernel
+    g_process_table = list_init();
+    g_segment_table = struct_init(128);
 
     binaryName = (int*) *argv;
-    kernel_load_executable(1, 4 * 1024 * 1024, binaryName);
-    kernel_load_executable(2, 4 * 1024 * 1024, binaryName);
-    kernel_load_executable(3, 4 * 1024 * 1024, binaryName);
-    kernel_load_executable(4, 4 * 1024 * 1024, binaryName);
+    kernel_create_context(1, binaryName);
+    kernel_create_context(2, binaryName);
+    kernel_create_context(3, binaryName);
+    kernel_create_context(4, binaryName);
 }
 
 void kernel_run() {
@@ -4359,6 +4588,8 @@ void kernel_run() {
         } else if(action == KERNEL_UNLOCK) {
             kernel_unlock(g_lock);
             kernel_switch_to_process(g_running_process);
+        } else if(action == KERNEL_PAGE_FAULT) {
+            kernel_palloc(process_get_id(g_running_process));
         }
     }
 }
@@ -4366,9 +4597,8 @@ void kernel_run() {
 void kernel_load_executable(int pid, int segment_size, int *filename) {
     int *process;
 
-    process = process_allocate();
-    process_set_id(process, pid);
-    process_set_state(process, PROCESS_READY);
+    process = process_init_segment(pid, segment_size);
+    process_init_pagetable(process);
 
     list_push_back(g_readyqueue, process);
     alarm(pid, segment_size, filename);
@@ -4552,15 +4782,6 @@ int tlb(int vaddr) {
     int page_frame;
     int offset;
 
-    if(DEBUG_4) {
-        print((int*) "-------------------- TLB --------------------");
-        println();
-
-        print((int*) "vaddr: ");
-        printInt(vaddr);
-        println();
-    }
-
     if (vaddr % 4 != 0)
         exception_handler(EXCEPTION_ADDRESSERROR);
 
@@ -4573,51 +4794,33 @@ int tlb(int vaddr) {
         pagetable = process_get_pagetable(g_running_process);
         page_frame_ref = struct_get_element_at(pagetable, page_nr);
 
-        // If there is no page table entry we get a page fault
-        if(page_frame_ref == (int*)0)
-            page_frame_ref = page_fault(g_running_process, page_nr);
-
-        // Compute the start of the page frame
-        page_frame = (*page_frame_ref)*PAGE_SIZE;
-
-        if(DEBUG_4) {
-
-            print((int*) "Page number: ");
-            printInt(page_nr);
-            println();
-
-            print((int*) "Page frame: ");
-            printInt(page_frame);
-            println();
-
-            print((int*) "Offset: ");
-            printInt(offset);
-            println();
-
-            print((int*) "page_frame + offset: ");
-            printInt(page_frame + offset);
-            println();
-
-            print((int*) "vaddr + g_segment_offset: ");
-            printInt(vaddr + g_segment_offset);
-            println();
-        }
-
         // Add the previously computed offset to get the physical address
-        vaddr = page_frame + offset;
-    } else
-        // If paging is not active just add the segment offset
-        vaddr = vaddr + g_segment_offset;
+        vaddr = *page_frame_ref + offset;
+    }
 
     // physical memory is word-addressed for lack of byte-sized data type
     return vaddr / 4;
 }
 
 int loadMemory(int vaddr) {
+    if(g_paging_active) {
+        g_page_fault = check_page(vaddr);
+
+        if(g_page_fault)
+            return 0;
+    }
+
     return *(memory + tlb(vaddr));
 }
 
 void storeMemory(int vaddr, int data) {
+    if(g_paging_active) {
+        g_page_fault = check_page(vaddr);
+
+        if(g_page_fault)
+            return;
+    }
+
     *(memory + tlb(vaddr)) = data;
 }
 
@@ -4667,6 +4870,18 @@ void fct_syscall() {
         pc = pc + 4;
     } else if (*(registers+REG_V0) == SYSCALL_SIGNAL) {
         syscall_signal();
+        pc = pc + 4;
+    } else if (*(registers+REG_V0) == SYSCALL_MMAP) {
+        syscall_mmap();
+        pc = pc + 4;
+    } else if (*(registers+REG_V0) == SYSCALL_MADVISE) {
+        syscall_madvise();
+        pc = pc + 4;
+    } else if (*(registers+REG_V0) == SYSCALL_LSEEK) {
+        syscall_lseek();
+        pc = pc + 4;
+    } else if (*(registers+REG_V0) == SYSCALL_MSYNC) {
+        syscall_msync();
         pc = pc + 4;
     } else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
@@ -4896,7 +5111,9 @@ void op_lw() {
 
     *(registers+rt) = loadMemory(vaddr);
 
-    pc = pc + 4;
+    // A6: LOADMEMORY is only properly executed if no page fault occurs
+    if(g_page_fault == 0)
+        pc = pc + 4;
 
     if (debug_disassemble) {
         printOpcode(opcode);
@@ -4938,7 +5155,9 @@ void op_sw() {
 
     storeMemory(vaddr, *(registers+rt));
 
-    pc = pc + 4;
+    // A6: STOREMEMORY is only properly executed if no page fault occurs
+    if(g_page_fault == 0)
+        pc = pc + 4;
 
     if (debug_disassemble) {
         printOpcode(opcode);
@@ -5092,19 +5311,29 @@ void execute() {
 void run() {
 
     while (1) {
+        g_page_fault = 0;
+
         fetch();
-        decode();
-        pre_debug();
-        execute();
-        post_debug();
-        
-        if(g_interrupts_active)
-            g_ticks = g_ticks + 1;
-        if(g_ticks == TIME_SLICE) {
-            g_kernel_action = KERNEL_SCHEDULE;
-            trap_to_kernel();
-            g_ticks = 0;
+
+        if(g_page_fault == 0) {
+            decode();
+            pre_debug();
+            execute();
+            post_debug();
+
+            if(g_interrupts_active)
+                g_ticks = g_ticks + 1;
+            if(g_ticks == TIME_SLICE) {
+                g_kernel_action = KERNEL_SCHEDULE;
+                trap_to_kernel();
+                g_ticks = 0;
+            }
         } 
+
+        if(g_page_fault) {
+            g_kernel_action = KERNEL_PAGE_FAULT;
+            trap_to_kernel();
+        }
     }
 }
 
@@ -5188,10 +5417,6 @@ void copyBinaryToMemory() {
 }
 
 void emulate(int argc, int *argv) {
-    int segment_size;
-
-    int i;
-
     print(selfieName);
     print((int*) ": this is selfie's mipster executing ");
     print(binaryName);
@@ -5204,26 +5429,157 @@ void emulate(int argc, int *argv) {
     init_machine();
     init_segmentation();
     init_paging();
-    
-    segment_size = 4 * 1024 * 1024;
+
+    create_kernel_context(argc, argv);
+
+    run();
+}
+
+// -----------------------------------------------------------------
+// -------------------------- ASSIGNMENT6 --------------------------
+// -----------------------------------------------------------------
+
+int check_page(int vaddr) {
+    int *pagetable;
+    int page_nr;
+    int *page_frame_ref;
+    int page_frame;
+    int offset;
+
+    page_nr = vaddr/PAGE_SIZE;
+    // The offset stays the same
+    offset = vaddr - page_nr*PAGE_SIZE;
+    pagetable = process_get_pagetable(g_running_process);
+    page_frame_ref = struct_get_element_at(pagetable, page_nr);
+
+    if(page_frame_ref == (int*)0) {
+
+        g_page_fault_vaddr = vaddr;
+
+        if(DEBUG_6) {
+            print((int*) "-----------------------------------------------------");
+            println();
+            print((int*) "No page frame available at vaddr: ");
+            printInt(g_page_fault_vaddr);
+            print((int*) " pid: ");
+            printInt(process_get_id(g_running_process));
+            println();
+        }
+
+        return 1;
+    }
+
+    return 0;
+}
+
+void print_virt_memory() {
+    int i;
+
+    print((int*) "---------------------------------------------");
+    println();
+    print((int*) "-------------- PRINT VIRT MEMORY ------------");
+    println();
+    print((int*) "---------------------------------------------");
+    println();
+
+    i = 0;
+    while(i < MEMORY_SIZE/4) {
+
+        if(*(g_virtual_memory + i) != 0) {
+            printInt(4*i);
+            print((int*) " => ");
+            printInt(*(g_virtual_memory + i));
+            println();
+        }
+
+        i = i + 1;
+    }
+}
+
+void print_phys_memory() {
+    int i;
+
+    print((int*) "---------------------------------------------");
+    println();
+    print((int*) "-------------- PRINT PHYS MEMORY ------------");
+    println();
+    print((int*) "---------------------------------------------");
+    println();
+
+    i = 0;
+    while(i < MEMORY_SIZE/4) {
+
+        if(*(g_physical_memory + i) != 0) {
+            printInt(4*i);
+            print((int*) " => ");
+            printInt(*(g_physical_memory + i));
+            println();
+        }
+
+        i = i + 1;
+    }
+}
+
+void print_registers() {
+    int i;
+
+    print((int*) "---------------------------------------------");
+    println();
+    print((int*) "--------------- PRINT REGISTERS -------------");
+    println();
+    print((int*) "---------------------------------------------");
+    println();
+
+    i = 0;
+    while(i < 32) {
+
+        if(*(g_physical_memory + i) != 0) {
+            printInt(i);
+            print((int*) " => ");
+            printInt(*(registers + i));
+            println();
+        }
+
+        i = i + 1;
+    }
+}
+
+void create_kernel_context(int argc, int *argv) {
+    int *new_registers;
+
+    // Load the kernel code to physical memory
+    memory = g_physical_memory;
 
     copyBinaryToMemory();
 
     resetInterpreter();
 
-    *(registers+REG_SP) = segment_size - 4; // The kernel gets 2 MB of memory
+    *(registers+REG_SP) = MEMORY_SIZE - 4; // The kernel gets 2 MB of memory
     *(registers+REG_GP) = binaryLength;
     *(registers+REG_K1) = *(registers+REG_GP);
 
-    g_running_process = process_init_segment(0, segment_size);
-    process_init_pagetable(g_running_process);
+    // Copy the registers
+    new_registers =  malloc(32 * 4);
+    *(new_registers+REG_SP) = MEMORY_SIZE - 4; // The kernel gets 2 MB of memory
+    *(new_registers+REG_GP) = binaryLength;
+    *(new_registers+REG_K1) = *(new_registers+REG_GP);
+
+    // The kernel doesn't need a segment
+    // Initializing our kernel process
+    g_running_process = process_allocate();
+    process_set_id(g_running_process, 0);
+    process_set_pc(g_running_process, 0);
+    process_set_registers(g_running_process, new_registers);
+    process_set_reg_hi(g_running_process, 0);
+    process_set_reg_lo(g_running_process, 0);
+    process_set_segment_id(g_running_process, g_segment_counter);
+    process_set_state(g_running_process, PROCESS_READY);
+    list_push_back(g_process_table, g_running_process);
+
+    // Finally we set our kernel process to the current running process
     g_kernel_process = g_running_process;
 
     up_copyArguments(argc, argv);
-
-    activate_paging();
-
-    run();
 }
 
 // -----------------------------------------------------------------
@@ -5233,77 +5589,47 @@ void emulate(int argc, int *argv) {
 void load_to_virt_memory() {
     g_segment_offset = g_next_segment;
     memory = g_virtual_memory;
-    g_paging_active = 0;
 
     load();
     copyBinaryToMemory();
 
     g_segment_offset = 0;
     memory = g_physical_memory;
-    g_paging_active = 1;
 }
 
-int  palloc() {
-    int page_frame_nr;
-
-    page_frame_nr = g_freelist;
-    g_freelist = g_freelist + 1;
-
-    return page_frame_nr;
-}
-
-int *page_fault(int *process, int page_nr) {
+void page_fault(int pid, int vaddr, int memory_position) {
+    int *process;
     int *pagetable;
     int *page_frame_ref;
     int *virt_addr;
     int *phys_addr;
+    int page_nr;
+
+    process = list_entry_get_data(list_find_entry_by(g_process_table, pid, 0));
 
     // Fetch the page table
     pagetable = process_get_pagetable(process);
 
     // Allocate a new page frame
     page_frame_ref = malloc(1 * 4);
-    *page_frame_ref = palloc();
+    *page_frame_ref = memory_position;
+
+    // Get the position of the frame in the virtual memory
+    page_nr = vaddr/PAGE_SIZE;
 
     // Map the virtual into the physical memory
     struct_set_element_at(pagetable, page_nr, page_frame_ref);
 
-    if(DEBUG_5) {
-        print((int*) "---------------- PAGE FAULT -----------------");
-        println();
-
-        print((int*) "Page number: ");
-        printInt(page_nr);
-        print((int*) " -> ");
-        printInt(*page_frame_ref);
-        print((int*) " page frame");
-        println();
-    }
-
     // Finally we load the page into the physical memory
     // First we compute the current virtual address
     virt_addr = g_virtual_memory + (g_segment_offset + page_nr*PAGE_SIZE)/4;
-    phys_addr = g_physical_memory + ((*page_frame_ref)*PAGE_SIZE)/4;
+    phys_addr = g_physical_memory + (*page_frame_ref)/4;
     // Copy the virtual page into a page frame
     page_load(virt_addr, phys_addr);
-
-    return page_frame_ref;
 }
 
 void page_load(int *virt_addr, int *phys_addr) {
     int i;
-
-    if(DEBUG_5) {
-        print((int*) "----------------- PAGE LOAD -----------------");
-        println();
-
-        print((int*) "virt_addr: ");
-        printInt((int) virt_addr);
-        println();
-        print((int*) "phy_addr: ");
-        printInt((int) phys_addr);
-        println();
-    }
 
     i = 0;
     while(i < PAGE_SIZE/4) {
@@ -5312,15 +5638,11 @@ void page_load(int *virt_addr, int *phys_addr) {
     }
 }
 
-void activate_paging() {
-    g_paging_active = 1;
-    memory = g_physical_memory;
-}
-
 void init_machine() {
     g_process_table = list_init();
     g_ticks = 0;
     g_interrupts_active = 0;
+    g_paging_active = 0;
     g_kernel_action = KERNEL_SCHEDULE;
 }
 
@@ -5382,6 +5704,7 @@ int *process_init_segment(int pid, int segment_size) {
     process_set_reg_hi(process, 0);
     process_set_reg_lo(process, 0);
     process_set_segment_id(process, g_segment_counter);
+    process_set_state(process, PROCESS_READY);
     list_push_back(g_process_table, process);
 
     g_segment_counter = g_segment_counter + 1;
@@ -5455,6 +5778,7 @@ void trap_to_kernel() {
     process_restore(g_kernel_process);
     // Kernel mustn't be interrupted
     g_interrupts_active = 0;
+    g_paging_active = 0;
 }
 
 void process_save(int *process) {
@@ -5573,8 +5897,6 @@ void init_segmentation() {
     g_segment_offset = 0;
     g_next_segment = 0;
     g_segmentation_active = 0;
-
-    
 }
 
 // -----------------------------------------------------------------
@@ -6215,9 +6537,6 @@ int selfie(int argc, int* argv) {
 
                 return 0;
             } else if (stringCompare((int*) *argv, (int*) "-k")) {
-                print(selfieName);
-                print((int*) ": selfie -k size ... not yet implemented");
-                println();
 
                 argc = argc - 1;
                 argv = argv + 1;
@@ -6240,6 +6559,7 @@ int main(int argc, int *argv) {
     DEBUG_3 = 0;
     DEBUG_4 = 0;
     DEBUG_5 = 0;
+    DEBUG_6 = 0;
 
     initLibrary();
     initScanner();
