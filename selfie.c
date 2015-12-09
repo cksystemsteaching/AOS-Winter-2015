@@ -1,69 +1,3 @@
-// Copyright (c) 2015, the Selfie Project authors. All rights reserved.
-// Please see the AUTHORS file for details. Use of this source code is
-// governed by a BSD license that can be found in the LICENSE file.
-//
-// Selfie is a project of the Computational Systems Group at the
-// Department of Computer Sciences of the University of Salzburg
-// in Austria. For further information and code please refer to:
-//
-// http://selfie.cs.uni-salzburg.at
-//
-// The Selfie Project provides an educational platform for teaching
-// undergraduate and graduate students the design and implementation
-// of programming languages and runtime systems. The focus is on the
-// construction of compilers, libraries, operating systems, and even
-// virtual machine monitors. The common theme is to identify and
-// resolve self-reference in systems code which is seen as the key
-// challenge when teaching systems engineering, hence the name.
-//
-// Selfie is a fully self-referential 5k-line C implementation of:
-//
-// 1. a self-compiling compiler called cstarc that compiles
-//    a tiny but powerful subset of C called C Star (C*) to
-//    a tiny but powerful subset of MIPS32 called MIPSter,
-// 2. a self-executing emulator called mipster that executes
-//    MIPSter code including itself when compiled with cstarc, and
-// 3. a tiny C* library called libcstar utilized by cstarc and mipster.
-//
-// Selfie is kept minimal for simplicity and implemented in a single file.
-// There is neither a linker nor an assembler. However, there is a simple
-// profiler and disassembler and even a simple debugger as well as minimal
-// operating system support in the form of MIPS32 o32 system calls built
-// into the emulator.
-//
-// C* is a tiny Turing-complete subset of C that includes dereferencing
-// (the * operator) but excludes data structures, bitwise and Boolean
-// operators, and many other features. There are only signed 32-bit
-// integers and pointers as well as character and string constants.
-// This choice turns out to be helpful for students to understand the
-// true role of composite data structures such as arrays and records.
-// Bitwise operations are implemented in libcstar using signed integer
-// arithmetics helping students gain true understanding of two's complement.
-// C* is supposed to be close to the minimum necessary for implementing
-// a self-compiling, single-pass, recursive-descent compiler. C* can be
-// taught in around two weeks of classes depending on student background.
-//
-// The compiler can readily be extended to compile features missing in C*
-// and to improve performance of the generated code. The compiler generates
-// MIPSter executables that can directly be executed by the emulator or
-// written to a file in a simple, custom-defined format. Support of standard
-// MIPS32 ELF binaries should be easy but remains future work.
-//
-// MIPSter is a tiny Turing-complete subset of the MIPS32 instruction set.
-// It only features arithmetic, memory, and control-flow instructions but
-// neither bitwise nor byte-level instructions. MIPSter can be properly
-// explained in a single week of classes.
-//
-// The emulator implements minimal operating system support that is meant
-// to be extended by students, first as part of the emulator, and then
-// ported to run on top of it, similar to an actual operating system or
-// virtual machine monitor. The fact that the emulator can execute itself
-// helps exposing the self-referential nature of that challenge.
-//
-// Selfie is the result of many years of teaching systems engineering.
-// The design of the compiler is inspired by the Oberon compiler of
-// Professor Niklaus Wirth from ETH Zurich.
-
 int *selfieName = (int*) 0;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -299,12 +233,18 @@ int* blocked_queue;
 int* lock;
 // Debugging Variable for locking which indicates the next Process who needs the lock
 int debug_locking = 1;
+// Variable for if printing or not...
+int prints;
 // one page has 4 KB size
 int PAGE_SIZE = 4096;
 // one frame has 4 KB size
 int FRAME_SIZE = 4096;
 // Current frame number
 int current_frame_number;
+// Maximal number of frames for the demo of assingnment 5
+int max_frames = 128;
+
+int randomaddress = 0;
 
 int* prev_node;
 int* prev_process;
@@ -314,7 +254,6 @@ int* next_process;
 void create_ready_queue(int n, int m);
 int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo);
 void create_frame_table();
-int* create_page_table(int* page_table);
 int* initializeList(int *list);
 int* addToList(int *list, int data);
 void printListPID(int *list);
@@ -324,6 +263,8 @@ int getNodeFromList(int *list, int nthNode);
 int* deleteFirstNodeFromList(int *list);
 int* getNodeByIdFromProcessList(int id);
 void schedule_and_switch();
+int* create_page_table_entry(int pagenumber , int* physical_address);
+void printPageTable();
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -748,17 +689,23 @@ void emitPutchar();
 void emitSchedYield();
 void syscall_sched_yield();
 
-void emitSwitch();
-void syscall_switch();
-
 void emitMlock();
 void syscall_mlock();
 
 void emitMunlock();
 void syscall_munlock();
 
+void emitSwitch();
+void syscall_switch();
+
 void emitGetpid();
 void syscall_getpid();
+
+void emitMapPageInContext();
+void syscall_map_page_in_context();
+
+void emitFlushPageInContext();
+void syscall_flush_page_in_context();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
@@ -768,10 +715,12 @@ int SYSCALL_WRITE   	= 4004;
 int SYSCALL_OPEN    	= 4005;
 int SYSCALL_MALLOC  	= 5001;
 int SYSCALL_SCHED_YIELD = 5003;
-int SYSCALL_SWITCH  	= 5004;
-int SYSCALL_MLOCK       = 5005;
-int SYSCALL_MUNLOCK     = 5006;
+int SYSCALL_MLOCK       = 5004;
+int SYSCALL_MUNLOCK     = 5005;
+int SYSCALL_SWITCH  	= 5006;
 int SYSCALL_GETPID      = 5007;
+int SYSCALL_MAP		= 5008;
+int SYSCALL_UNMAP	= 5009;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -3373,6 +3322,8 @@ void compile() {
     emitMlock();
     emitMunlock();
     emitGetpid();
+    emitMapPageInContext;
+    emitFlushPageInContext;
 
     // parser
     gr_cstar();
@@ -4059,87 +4010,6 @@ void syscall_sched_yield(){
 
 }
 
-void emitSwitch() {
-
-    // create Symbol Table Entry for swapoff
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "switch", binaryLength, FUNCTION, INT_T, 0);
-
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
-    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
-    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SWITCH);
-    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
-    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
-
-}
-
-void syscall_switch() {
-
-	if(*(running_process) == 0){
-
-		prev_node = getNodeByIdFromProcessList(running_process_id);
-		prev_process = (int*) (prev_node);
-
-		syscall_getpid();
-
-		next_node = getNodeByIdFromProcessList(running_process_id);
-		next_process = (int*) (next_node);
-
-		*(running_process + 1) = *(running_process + 1) + 1;
-
-		running_process = next_process ;
-
-		ready_queue = deleteFirstNodeFromList(ready_queue);
-		println();
-		println();
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "Running Kernel Process and Switch to User Process");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		println();
-		println();
-	}
-	else{
-		prev_node = getNodeByIdFromProcessList(running_process_id);
-		prev_process = (int*) (prev_node);
-
-		next_node = getNodeByIdFromProcessList(0);
-		next_process = (int*) (next_node);
-
-		running_process = next_process;
-
-		ready_queue = addToList(ready_queue, (int) prev_process);
-		println();
-		println();
-		println();
-		println();
-		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-		println();
-		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-		println();
-		print((int*) "Running User Process and Switch to Kernel Process");
-		println();
-		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-		println();
-		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-		println();
-
-	}
-
-}
-
 void emitMlock() {
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "mlock", binaryLength, FUNCTION, INT_T, 0);
 
@@ -4156,21 +4026,22 @@ void emitMlock() {
 
 void syscall_mlock() {
 	*lock = *(running_process);
-
-	println();
-	println();
-	println();
-	println();
-	print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-	println();
-	print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-	println();
-	print((int*) "Running User Process get's the lock");
-	println();
-	print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-	println();
-	print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-	println();
+	if(prints){
+		println();
+		println();
+		println();
+		println();
+		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+		println();
+		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+		println();
+		print((int*) "Running User Process get's the lock");
+		println();
+		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+		println();
+		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+		println();
+	}
 }
 
 void emitMunlock() {
@@ -4209,6 +4080,10 @@ void syscall_munlock() {
 	}
 }
 
+// -------------------------------------------------------------------
+// --------------------------- HYPERCALLS ----------------------------
+// -------------------------------------------------------------------
+
 void emitGetpid() {
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "getpid", binaryLength, FUNCTION, INT_T, 0);
 
@@ -4223,7 +4098,11 @@ void emitGetpid() {
     emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
-void syscall_getpid(int* list) {
+// FAssignment 6
+// syscall for create_context
+// create_context returns a unique ID to identify the new context
+// in our case it sets the variable running_process_id which stands for the ID of the next running process
+void syscall_getpid() {
 
 	int* node;
 	int* process;
@@ -4234,6 +4113,151 @@ void syscall_getpid(int* list) {
 	node = (int*) getNodeFromList(ready_queue, size);
 	process = (int*) *(node + 1);
 	running_process_id = *(process);
+}
+
+void emitSwitch() {
+
+    // create Symbol Table Entry for swapoff
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "switch", binaryLength, FUNCTION, INT_T, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_SWITCH);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+
+}
+
+// Assignment 6
+// syscall for switch_context and for delete_context
+// switch_context switches contexts
+// delete_context deltes contexts and recycles IDs
+// In our case syscall_switch does this
+void syscall_switch() {
+
+	if(*(running_process) == 0){
+
+		prev_node = getNodeByIdFromProcessList(running_process_id);
+		prev_process = (int*) (prev_node);
+
+		syscall_getpid();
+
+		next_node = getNodeByIdFromProcessList(running_process_id);
+		next_process = (int*) (next_node);
+
+		*(running_process + 1) = *(running_process + 1) + 1;
+
+		running_process = next_process ;
+
+		ready_queue = deleteFirstNodeFromList(ready_queue);
+		if(prints){
+			println();
+			println();
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "Running Kernel Process and Switch to User Process");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			println();
+			println();
+		}
+	}
+	else{
+		prev_node = getNodeByIdFromProcessList(running_process_id);
+		prev_process = (int*) (prev_node);
+
+		next_node = getNodeByIdFromProcessList(0);
+		next_process = (int*) (next_node);
+
+		running_process = next_process;
+
+		ready_queue = addToList(ready_queue, (int) prev_process);
+		if(prints){
+			println();
+			println();
+			println();
+			println();
+			print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+			println();
+			print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+			println();
+			print((int*) "Running User Process and Switch to Kernel Process");
+			println();
+			print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+			println();
+			print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+			println();
+		}
+
+	}
+}
+
+void emitMapPageInContext() {
+
+    // create Symbol Table Entry for swapoff
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "map", binaryLength, FUNCTION, INT_T, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_MAP);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+
+}
+
+void syscall_map_page_in_context(int pagenumber) {
+
+	// Pagetable of the running Process
+	int* pagetable;
+	// Address of the next free Frame
+	int* physicaladdress;
+	// Pagetable Entry for the Mapping between physical and virtual Memory
+	int* table_entry;
+
+	pagetable = (int*) *(running_process + 6);
+
+	physicaladdress = (int*) (current_frame_number * FRAME_SIZE);
+
+	table_entry = create_page_table_entry(pagenumber, physicaladdress);
+
+	pagetable = addToList(pagetable, (int) table_entry);
+
+	*(running_process + 6) = (int) pagetable;
+
+}
+
+void emitFlushPageInContext() {
+
+    // create Symbol Table Entry for swapoff
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "map", binaryLength, FUNCTION, INT_T, 0);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_UNMAP);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+
+}
+
+void syscall_flush_page_in_context() {
+
+	//TODO
 
 }
 
@@ -4368,18 +4392,20 @@ int* sortListByPC(int *list) {
 		}
 	}
 
-		print((int*) "____________________________________________________");
-	 	println();
-	 	print((int*) "This is the Ready-Queue after sorting");
-	 	println();
-		print((int*) "____________________________________________________");
-		println();
-	 	print((int*) "PIDs");
-	 	println();
-	 	printListPID(ready_queue);
-	 	print((int*) "PCs");
-	 	println();
-	 	printListPC(ready_queue);
+		if(prints){
+			print((int*) "____________________________________________________");
+		 	println();
+		 	print((int*) "This is the Ready-Queue after sorting");
+		 	println();
+			print((int*) "____________________________________________________");
+			println();
+		 	print((int*) "PIDs");
+		 	println();
+		 	printListPID(ready_queue);
+		 	print((int*) "PCs");
+		 	println();
+		 	printListPC(ready_queue);
+		}
 
 	return list;
 }
@@ -4391,139 +4417,166 @@ void runOS(int argc, int* argv){
 
 
 	while(1){
-		println();
-		println();
-		println();
-		println();
-		println();
-		print((int*) "BEFORE RUNNING KERNEL");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		println();
-		print((int*) "This is the Process-List before running kernel");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "PIDs");
-		println();
-		printListPID(process_list);
-		print((int*) "PCs");
-		println();
-		printListPC(process_list);
-		print((int*) "____________________________________________________");
-	 	println();
-	 	print((int*) "This is the Ready-Queue before running Kernel");
-	 	println();
-		print((int*) "____________________________________________________");
-		println();
-	 	print((int*) "PIDs");
-	 	println();
-	 	printListPID(ready_queue);
-	 	print((int*) "PCs");
-	 	println();
-	 	printListPC(ready_queue);
-		print((int*) "____________________________________________________");
-	 	println();
-	 	print((int*) "This is the Blocked-Queue before running Kernel");
-	 	println();
-		print((int*) "____________________________________________________");
-		println();
-	 	print((int*) "PIDs");
-	 	println();
-	 	printListPID(blocked_queue);
-	 	print((int*) "PCs");
-	 	println();
-	 	printListPC(blocked_queue);
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "This is the Running Process before running Kernel");
-	 	println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "PID");
-		println();
-		print(itoa(*(running_process), Buffer, 10, 0, 0));
-		println();
-		print((int*) "PC");
-		println();
-		print(itoa(*(running_process+1), Buffer, 10, 0, 0));
-		println();
+		if(prints){
+			println();
+			println();
+			println();
+			println();
+			println();
+			print((int*) "BEFORE RUNNING KERNEL");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			println();
+			print((int*) "This is the Process-List before running kernel");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "PIDs");
+			println();
+			printListPID(process_list);
+			print((int*) "PCs");
+			println();
+			printListPC(process_list);
+			print((int*) "____________________________________________________");
+		 	println();
+		 	print((int*) "This is the Ready-Queue before running Kernel");
+		 	println();
+			print((int*) "____________________________________________________");
+			println();
+		 	print((int*) "PIDs");
+		 	println();
+		 	printListPID(ready_queue);
+		 	print((int*) "PCs");
+		 	println();
+		 	printListPC(ready_queue);
+			print((int*) "____________________________________________________");
+		 	println();
+		 	print((int*) "This is the Blocked-Queue before running Kernel");
+		 	println();
+			print((int*) "____________________________________________________");
+			println();
+		 	print((int*) "PIDs");
+		 	println();
+		 	printListPID(blocked_queue);
+		 	print((int*) "PCs");
+		 	println();
+		 	printListPC(blocked_queue);
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "This is the Running Process before running Kernel");
+		 	println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "PID");
+			println();
+			print(itoa(*(running_process), Buffer, 10, 0, 0));
+			println();
+			print((int*) "PC");
+			println();
+			print(itoa(*(running_process+1), Buffer, 10, 0, 0));
+			println();
+		}
 
 		syscall_switch();
 
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		println();
-		print((int*) "This is the Process-List after running kernel");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		println();
-		print((int*) "PIDs");
-		println();
-		printListPID(process_list);
-		print((int*) "PCs");
-		println();
-		printListPC(process_list);
-		print((int*) "____________________________________________________");
-		println();
-		println();
-	 	print((int*) "This is the Ready-Queue after running kernel");
-	 	println();
-		print((int*) "____________________________________________________");
-		println();
-		println();
-	 	print((int*) "PIDs");
-	 	println();
-	 	printListPID(ready_queue);
-	 	print((int*) "PCs");
-	 	println();
-	 	printListPC(ready_queue);
-		print((int*) "____________________________________________________");
-		println();
-		println();
-		print((int*) "This is the Blocked-Queue after running kernel");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		println();
-		print((int*) "PIDs");
-		println();
-		printListPID(blocked_queue);
-		print((int*) "PCs");
-		println();
-		printListPC(blocked_queue);
-		print((int*) "____________________________________________________");
-		println();
-		println();
-		print((int*) "This is the Running-Process after running kernel");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		println();
-		print((int*) "PID");
-		println();
-		print(itoa(*(running_process), Buffer, 10, 0, 0));
-		println();
-		print((int*) "PC");
-		println();
-		print(itoa(*(running_process+1), Buffer, 10, 0, 0));
-		println();
+		if(max_frames > 0){
+
+			if(max_frames % 2 == 0){
+				syscall_map_page_in_context(randomaddress);
+				current_frame_number = current_frame_number + 1;
+				randomaddress = randomaddress + 3;
+			}
+			else{
+				syscall_map_page_in_context(randomaddress);
+				current_frame_number = current_frame_number + 1;
+				randomaddress = randomaddress - 1;
+			}
+
+			max_frames = max_frames - 1;
+		}
+
+		if(prints){
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			println();
+			print((int*) "This is the Process-List after running kernel");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			println();
+			print((int*) "PIDs");
+			println();
+			printListPID(process_list);
+			print((int*) "PCs");
+			println();
+			printListPC(process_list);
+			print((int*) "____________________________________________________");
+			println();
+			println();
+		 	print((int*) "This is the Ready-Queue after running kernel");
+		 	println();
+			print((int*) "____________________________________________________");
+			println();
+			println();
+		 	print((int*) "PIDs");
+		 	println();
+		 	printListPID(ready_queue);
+		 	print((int*) "PCs");
+		 	println();
+		 	printListPC(ready_queue);
+			print((int*) "____________________________________________________");
+			println();
+			println();
+			print((int*) "This is the Blocked-Queue after running kernel");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			println();
+			print((int*) "PIDs");
+			println();
+			printListPID(blocked_queue);
+			print((int*) "PCs");
+			println();
+			printListPC(blocked_queue);
+			print((int*) "____________________________________________________");
+			println();
+			println();
+			print((int*) "This is the Running-Process after running kernel");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			println();
+			print((int*) "PID");
+			println();
+			print(itoa(*(running_process), Buffer, 10, 0, 0));
+			println();
+			print((int*) "PC");
+			println();
+			print(itoa(*(running_process+1), Buffer, 10, 0, 0));
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			println();
+			print((int*) "This is the Pagetable of the Running-Process");
+			println();
+			print((int*) "____________________________________________________");
+			printPageTable();
+		}
 
 		if(debug_locking == 1){
 			if(*lock == 0){
@@ -4538,43 +4591,46 @@ void runOS(int argc, int* argv){
 				ready_queue = sortListByPC(ready_queue);
 
 				debug_locking = 0;
-
-				println();
-				println();
-				println();
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
-				print((int*) "Unlocking and adding all User Process from the Blocked-Queue to the Ready-Queue");
-				println();
-				print((int*) "and then running the actual User Process");
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
+				if(prints){
+					println();
+					println();
+					println();
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+					print((int*) "Unlocking and adding all User Process from the Blocked-Queue to the Ready-Queue");
+					println();
+					print((int*) "and then running the actual User Process");
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+				}
 				run(argc, (int*) argv);
 			}
 			else{
 				blocked_queue = addToList(blocked_queue, (int) running_process);
 				running_process = kernel_process;
 
-				println();
-				println();
-				println();
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
-				print((int*) "Running User Process added to Blocked-Queue");
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
+				if(prints){
+					println();
+					println();
+					println();
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+					print((int*) "Running User Process added to Blocked-Queue");
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+				}
 				debug_locking = 0;
 			}
 		}
@@ -4588,39 +4644,43 @@ void runOS(int argc, int* argv){
 
 				debug_locking = 0;
 
-				println();
-				println();
-				println();
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
-				print((int*) "Unlocking and adding all User Process from the Blocked-Queue to the Ready-Queue");
-				println();
-				print((int*) "and then running the actual User Process");
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
+				if(prints){
+					println();
+					println();
+					println();
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+					print((int*) "Unlocking and adding all User Process from the Blocked-Queue to the Ready-Queue");
+					println();
+					print((int*) "and then running the actual User Process");
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+				}
 				run(argc, (int*) argv);
 			}
 			else{
-				println();
-				println();
-				println();
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
-				print((int*) "Running User Process does not need the lock");
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
-				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-				println();
+				if(prints){
+					println();
+					println();
+					println();
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+					print((int*) "Running User Process does not need the lock");
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+					println();
+				}
 				debug_locking = 1;
 				run(argc, (int*) argv);
 			}
@@ -4662,72 +4722,74 @@ void kOS(int argc, int* argv) {
 		blocked_queue = initializeList(blocked_queue);
 		create_lock();
 
-		println();
-		println();
-		println();
-		println();
-		println();
-		print((int*) "BOOTING");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		println();
-		print((int*) "This is the Process-List after Booting");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "PIDs");
-		println();
-		printListPID(process_list);
-		print((int*) "PCs");
-		println();
-		printListPC(process_list);
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "This is the Ready-Queue after Booting");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "PIDs");
-		println();
-		printListPID(ready_queue);
-		print((int*) "PCs");
-		println();
-		printListPC(ready_queue);
+		if(prints){
+			println();
+			println();
+			println();
+			println();
+			println();
+			print((int*) "BOOTING");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			println();
+			print((int*) "This is the Process-List after Booting");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "PIDs");
+			println();
+			printListPID(process_list);
+			print((int*) "PCs");
+			println();
+			printListPC(process_list);
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "This is the Ready-Queue after Booting");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "PIDs");
+			println();
+			printListPID(ready_queue);
+			print((int*) "PCs");
+			println();
+			printListPC(ready_queue);
 
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "This is the Blocked-Queue after Booting");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "PIDs");
-		println();
-		printListPID(blocked_queue);
-		print((int*) "PCs");
-		println();
-		printListPC(blocked_queue);
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "This is the Blocked-Queue after Booting");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "PIDs");
+			println();
+			printListPID(blocked_queue);
+			print((int*) "PCs");
+			println();
+			printListPC(blocked_queue);
 
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "This is the Running-Process after Booting");
-		println();
-		print((int*) "____________________________________________________");
-		println();
-		print((int*) "PID");
-		println();
-		print(itoa(*(running_process), Buffer, 10, 0, 0));
-		println();
-		print((int*) "PC");
-		println();
-		print(itoa(*(running_process+1), Buffer, 10, 0, 0));
-		println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "This is the Running-Process after Booting");
+			println();
+			print((int*) "____________________________________________________");
+			println();
+			print((int*) "PID");
+			println();
+			print(itoa(*(running_process), Buffer, 10, 0, 0));
+			println();
+			print((int*) "PC");
+			println();
+			print(itoa(*(running_process+1), Buffer, 10, 0, 0));
+			println();
+		}
 
 		runOS(argc, (int*) argv);
 	}
@@ -5577,6 +5639,8 @@ void printListPC(int *list) {
 	}
 }
 
+
+
 void run(int argc, int* argv) {
 
     int instr;
@@ -5996,17 +6060,86 @@ int testList() {
 	exit(0);
 }
 
+void printPageTable(){
+
+	int* pageTable;
+	int* Node;
+	int* Entry;
+	int size;
+	int* Buffer;
+	int i;
+	int pagenumber;
+	int physicaladdress;
+
+
+	i = 0;
+
+	Buffer = (int*)malloc(4*10);
+
+	pageTable = (int*) *(running_process + 6);
+
+	size = sizeOfList(pageTable);
+
+	println();
+	print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+	println();
+	print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+	println();
+	print((int*) "Size of the Pagetable");
+	println();
+	print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+	println();
+	print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+	println();
+	print(itoa(size, Buffer, 10, 0, 0));
+	println();
+
+	while(i<size){
+		Node = (int*) getNodeFromList(pageTable, i);
+		Entry = (int*) *(Node + 1);
+		pagenumber = *(Entry);
+		physicaladdress = *(Entry + 1);
+
+		println();
+		print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+		println();
+		print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+		println();
+		print(itoa(i, Buffer, 10, 0, 0));
+		print((int*) ". Pagetable Entry");
+		println();
+		print((int*) "Pagenumber");
+		println();
+		print(itoa(pagenumber, Buffer, 10, 0, 0));
+		println();
+		print((int*) "Physical Address");
+		println();
+		print(itoa(physicaladdress, Buffer, 10, 0, 0));
+		println();
+		print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+		println();
+		print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+		println();
+
+		i = i + 1;
+	}
+
+
+
+}
+
+
 // ------------------------ DATA STRUCTURE FOR A PAGE TABLE ENTRY -----------------------
 // Creating a new Page table entry with physical Address and virtual Address.
-int* create_page_table_entry(int* physical_address, int* virtual_address){
+int* create_page_table_entry(int pagenumber , int* physical_address){
 	//initialization of the process
 	int* page_table_entry;
 	//memory allocation
 	page_table_entry = malloc (2 * 4);
 
-	//initalization of the argments of the process
-	*page_table_entry = (int) physical_address;
-	*(page_table_entry+1) = (int) virtual_address;
+	//initalization of the arguments of the process
+	*page_table_entry = pagenumber;
+	*(page_table_entry+1) = (int) physical_address;
 
 	return page_table_entry;
 }
@@ -6044,20 +6177,6 @@ void create_frame_table(){
 	}
 }
 
-// Virtual address space is organised in 4KB pages
-// ------------------------ Page Table ----------------------------------------
-int* create_page_table(int* page_table){
-
-	int number_of_pages;
-
-	number_of_pages = virtual_memory_size / PAGE_SIZE;
-
-	page_table = initializeList(page_table);
-
-	return page_table;
-}
-
-
 // ------------------------ DATA STRUCTURE FOR A PROCESS -----------------------
 // Creating a new Process with Process ID (new_pid), Programm Counter (new_pc),
 // Address to the Register (new_reg), Address to the Memory (new_mem),
@@ -6070,6 +6189,7 @@ int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo){
 	int* page_table;
 	int* virtual_memory;
 	int* Buffer;
+
 	Buffer = (int*)malloc(4*10);
 
 	if(new_pid == 0){
@@ -6100,7 +6220,7 @@ int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo){
 		print(itoa(virtual_memory_size, Buffer, 10, 0, 0));
 		println();
 
-		page_table = create_page_table(page_table);
+		page_table = initializeList(page_table);
 
 		//initalization of the argments of the process
 		*process = new_pid;
@@ -6332,8 +6452,9 @@ int main(int argc, int *argv) {
 
     initInterpreter();
 
-    ticks = 1000000000;
-    number_of_processes = 16;
+    ticks = 10000000;
+    number_of_processes = 5;
+    prints = 1;
 
     selfieName = (int*) *argv;
 
