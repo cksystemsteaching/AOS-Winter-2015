@@ -36,11 +36,20 @@ int main() {
 		// non-kernel processes
 		i=48;
 
+		lock();
 		// print '0' to 'Z' (in asciitable)
 		while (i<90) {
 			putchar(i);
 			i = i+1;
 		}
+		unlock();
+	
+		i=48;	
+		while (i<90) {
+                        putchar(i);
+                        putchar(i);
+                        i = i+1;
+                }
 		exit(8);
 	}
 

@@ -664,6 +664,12 @@ void syscall_sched_yield();
 void emitSwitch();
 void syscall_sched_switch();
 
+void emitLock();
+void syscall_lock();
+
+void emitUnlock();
+void syscall_unlock();
+
 void emitGetpid();
 void syscall_getpid();
 
@@ -680,6 +686,8 @@ int SYSCALL_GETCHAR = 5002;
 int SYSCALL_YIELD   = 5003;
 int SYSCALL_SWITCH  = 5004;
 int SYSCALL_GETPID  = 5005;
+int SYSCALL_LOCK    = 5006;
+int SYSCALL_UNLOCK  = 5007;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -3274,6 +3282,8 @@ void compile() {
     emitYield();
     emitSwitch();
     emitGetpid();
+    emitLock();
+    emitUnlock();
 
     // parser
     gr_cstar();
@@ -4024,6 +4034,85 @@ void syscall_getpid() {
 	*(registers+REG_V0) = process_id;
 }
 
+void emitLock() {
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "lock", binaryLength, FUNCTION, VOID_T, 0);
+
+    // load the correct syscall number and invoke syscall
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_LOCK);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // jump back to caller, return value is in REG_V0
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+}
+
+// keeps pid. -1 if "free".
+int lock = -1;
+
+void syscall_lock() {
+	int from_pid;
+        // return result in REG_V0
+	if (lock == -1) {
+		lock = process_id;
+		printf("syscall_lock(): now locking pid %d\n", process_id);
+	}
+	else {
+		// context switch
+                
+		saveContext();
+		
+		from_pid = process_id;
+                process_id = 0;
+		if (process_id == processes)
+			process_id=1;
+                printf(" syscall_lock(). switch_from-to: %d->%d\n", from_pid, process_id);
+                fflush(stdout);
+                loadContext();
+	}
+		
+        *(registers+REG_V0) = 66; // todo: void
+}
+
+void emitUnlock() {
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "unlock", binaryLength, FUNCTION, VOID_T, 0);
+
+    // load the correct syscall number and invoke syscall
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_UNLOCK);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    // jump back to caller, return value is in REG_V0
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+}
+
+void syscall_unlock() {
+        // return result in REG_V0
+	int from_pid;
+
+	// security: release lock only if correct pid releases lock 
+	if (lock == process_id) {
+		printf("releasing lock for pid %d\n", process_id);
+		lock = -1;
+
+
+                // context switch
+
+                saveContext();
+
+                from_pid = process_id;
+                process_id = 0;
+                if (process_id == processes)
+                        process_id=1;
+                printf(" syscall_unlock(). switch_from-to: %d->%d\n", from_pid, process_id);
+                fflush(stdout);
+                loadContext();
+
+	} else {
+		printf("could not release lock by pid %d. lock owned by pid %d.\n", process_id, lock); 
+	}
+
+
+        *(registers+REG_V0) = 77; //todo: void
+}
+
 
 void emitPutchar() {
     createSymbolTableEntry(GLOBAL_TABLE, (int*) "putchar", binaryLength, FUNCTION, INT_T, 0);
@@ -4109,6 +4198,10 @@ void fct_syscall() {
 	return;
     } else if (*(registers+REG_V0) == SYSCALL_GETPID) {
         syscall_getpid();
+    } else if (*(registers+REG_V0) == SYSCALL_LOCK) {
+        syscall_lock();
+    } else if (*(registers+REG_V0) == SYSCALL_UNLOCK) {
+        syscall_unlock();
     } else {
         exception_handler(EXCEPTION_UNKNOWNSYSCALL);
     }
