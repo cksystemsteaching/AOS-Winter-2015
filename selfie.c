@@ -356,6 +356,7 @@ void kernel_delete_context(int pid);
 void kernel_map_page_in_context(int pid);
 void kernel_flush_page_in_context(int pid, int page_nr);
 void kernel_palloc(int pid);
+void kernel_page_fault(int pid, int vaddr, int memory_position);
 
 // A3
 void kernel(int argc, int* argv);
@@ -524,7 +525,7 @@ int  g_paging_active;
 // Constants
 int  NUMBER_OF_INSTANCES;
 int  TIME_SLICE = 5000;
-int  MEMORY_SIZE;
+int  MEMORY_SIZE = 33554432; // 32 MB
 int  PAGE_SIZE = 4096; // 4 KB
 
 // Kernel Modes
@@ -4528,19 +4529,59 @@ void kernel_create_context(int pid, int *filename) {
 void kernel_delete_context(int pid) {
     // Delete context from the kernel page table ...
     list_remove_entry_by(g_process_table, pid, 0);
+
     // as well as from the emulator page table
     msync(pid);
 }
 
 void kernel_map_page_in_context(int pid) {
     int vaddr;
+    int bump;
 
+    // MADVISE returns the virtual address where the page fault occured
     vaddr = madvise();
-    mmap(pid, vaddr);
+
+    // MMAP allocates a page on the calling processes heap and returns the base address
+    bump = mmap(pid, vaddr);
+    kernel_page_fault(pid, vaddr, bump);
+
+    // Finally we switch to the user processes which ran before
     kernel_switch_to_process(g_running_process);
 }
 
+// Makes an entry in the kernels page table
+void kernel_page_fault(int pid, int vaddr, int memory_position) {
+    int *process;
+    int *pagetable;
+    int *page_frame_ref;
+    int page_nr;
+
+    process = list_entry_get_data(list_find_entry_by(g_process_table, pid, 0));
+
+    // Fetch the page table
+    pagetable = process_get_pagetable(process);
+
+    // Allocate a new page frame
+    page_frame_ref = malloc(1 * 4);
+    *page_frame_ref = memory_position;
+
+    // Get the position of the frame in the virtual memory
+    page_nr = vaddr/PAGE_SIZE;
+
+    // Map the virtual into the physical memory
+    struct_set_element_at(pagetable, page_nr, page_frame_ref);
+}
+
 void kernel_flush_page_in_context(int pid, int page_nr) {
+    int *process;
+    int *pagetable;
+
+    // Remove the page from the pagetable
+    process = list_entry_get_data(list_find_entry_by(g_process_table, pid, 0));
+    pagetable = process_get_pagetable(process);
+    struct_set_element_at(pagetable, page_nr, (int*)0);
+
+    // Do the same in the emulator
     lseek(pid, page_nr);
 }
 
