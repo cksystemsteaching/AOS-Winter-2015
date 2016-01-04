@@ -722,6 +722,11 @@ int process_id;
 // segment table, see comments below how it's structured
 int *segmenttable;
 
+// **** paging ****
+int* pagetable;
+int pages_used;
+// **** /paging ****
+
 // m: number of execute()s in run() are performed until scheduler switches to next process
 int m;
 
@@ -737,6 +742,10 @@ void initMemory(int megabytes) {
     // segmenttable holds up to 100 processes
     segmenttable = malloc(100 * 2 * 4);
     processes = 0;
+
+    // pagetable holds up to 8192 entries (4kByte pages * 8192 entries = 32MB
+    pagetable = malloc (8192 * 4);
+    pages_used = 0;
 }
 
 
@@ -903,6 +912,8 @@ void addprocess() {
     process_id = processes - 1;
     
     copyBinaryToMemory();
+
+//printf("binaryLength: %d\n", binaryLength);
 
     i = 0;
     while (i<32) {
@@ -3743,12 +3754,26 @@ void emitExit() {
     emitRFormat(0, 0, 0, 0, FCT_SYSCALL);
 }
 
+
+void print_mem_usage() {
+	printf("\n");
+	printf("******************\n");
+	printf(" usage statistics\n");
+	printf(" ----------------\n");
+	printf(" pages used: %d \n", pages_used);
+	printf(" mem used: %d kbytes \n", pages_used * 4096);
+	printf("******************\n");
+}
+
 void syscall_exit() {
     int exitCode;
 
     exitCode = *(registers+REG_A0);
 
     *(registers+REG_V0) = exitCode;
+
+
+    print_mem_usage();
 
     print(binaryName);
     print((int*) ": exiting with error code ");
@@ -3828,16 +3853,22 @@ void emitWrite() {
 }
 
 void syscall_write() {
+
     int size;
     int vaddr;
     int fd;
     int *buffer;
+    int offset;
 
     size  = *(registers+REG_A2);
     vaddr = *(registers+REG_A1);
     fd    = *(registers+REG_A0);
 
-    buffer = memory + tlb(vaddr) + getsegmentoffset(process_id);
+
+    offset = getpageoffset(vaddr);
+    buffer = memory + tlb(vaddr & 0xFFF) + offset; 
+//printf("buffer: %c size: %d\n", buffer, size);
+    // was/armin: buffer = memory + tlb(vaddr) + getsegmentoffset(process_id);
     //buffer = getsegmentoffset(process_id) + memory + tlb(vaddr);
 
     size = write(fd, buffer, size);
@@ -3937,6 +3968,9 @@ void syscall_malloc() {
     if (size % 4 != 0)
         size = size + 4 - size % 4;
 
+
+    printf("\nDEBUG: syscall_malloc(): pid: %d . allocated %d bytes\n", process_id, size);
+
     bump = *(registers+REG_K1);
 
     if (bump + size >= *(registers+REG_SP))
@@ -4010,7 +4044,7 @@ void syscall_sched_switch() {
 		process_id = from_pid; // noetig?
 		//pc = pc + 4;
                 saveContext();
-        	printf(" syscall_switch_from-to: %d->%d\n", from_pid, to_pid);
+//        	printf(" syscall_switch_from-to: %d->%d\n", from_pid, to_pid);
                 process_id = to_pid;
         	fflush(stdout);
                 loadContext();
@@ -4142,6 +4176,8 @@ void emitPutchar() {
 // ---------------------------- MEMORY -----------------------------
 // -----------------------------------------------------------------
 
+int* segmenttable;
+
 int tlb(int vaddr) {
     if (vaddr % 4 != 0)
         exception_handler(EXCEPTION_ADDRESSERROR);
@@ -4150,24 +4186,71 @@ int tlb(int vaddr) {
     return vaddr / 4;
 }
 
+int getpageoffset(int vaddr) {
+	int i;
+	int offset;
+	int val;
+	int found;
+
+	offset = -1;
+	for (i = 0; i< pages_used; i++) {
+                val = (process_id << 14) | ((vaddr & 0x3FFFC00) >> 12);
+//		printf("getpageoffset: uppernipple=%d lowernipple=%d\n", uppernipple, lowernipple);
+//		printf("getpageoffset: val=%d\n", val);
+                if (*(pagetable + i) == val) {
+                        // found
+                        offset = 4096 * i; // 4096=pagesize
+                        break;
+                }
+        }
+	return offset;
+
+}
+
+// create new page and return offset to mem
+int newpage(int vaddr) {
+	*(pagetable + pages_used) = (process_id << 14) | ((vaddr & 0x3FFFC00) >> 12);
+	pages_used++;
+//	printf ("newpage(). pages_used:%d \n", pages_used);
+//	printf ("newpage(). return offset: %d \n", 4096 * (pages_used -1));
+	return 4096 * (pages_used -1); // 4096=pagesize
+
+}
+
 int loadMemory(int vaddr) {
     int offset;
-    offset = getsegmentoffset(process_id);
+// if (SEGMENTATION)    offset = getsegmentoffset(process_id);
+// if (PAGING)
 
-//    //printf("load mem: v:%d phy:%d\n", vaddr, tlb(vaddr) + offset );
+	offset = getpageoffset(vaddr);
+
 //    fflush(stdout);    
 
-    return *(memory + tlb(vaddr) + offset );
+//printf("loadMemory() vaddr:%d phy:%d data:%d\n", vaddr, tlb(vaddr & 0xFFF) + offset, *(memory + tlb(vaddr & 0xFFF) + offset ));
+    return *(memory + tlb(vaddr & 0xFFF) + offset );
     //return *(memory + tlb(vaddr));
 }
 
 void storeMemory(int vaddr, int data) {
     int offset;
-    offset = getsegmentoffset(process_id);
+//	printf("storeMemory(). pid: %d. vaddr %d\n", process_id, vaddr);
+//    if (SEGMENTATION)
+//	offset = getsegmentoffset(process_id);
+//    if (PAGING) {
+	offset = getpageoffset(vaddr);
+
+
+	if (offset == -1) {
+		//printf ("requestednewpage");
+		offset = newpage(vaddr);
+	}
+//    }
 	
 ////printf("mem2write @%d: %d\n", tlb(vaddr) + offset, data);
 //fflush(stdout);
-    *(memory + tlb(vaddr) + offset) = data;
+    *(memory + tlb(vaddr & 0xFFF) + offset) = data;
+//    printf("  --> storeMemory(). vlb(vaddr & 0xFFF): %d, offset: %d, paddr: %d, page: %d data: %d\n", tlb(vaddr & 0xFFF), offset, tlb(vaddr & 0xFFF) + offset, offset/4096, data);
+    //*(memory + tlb(vaddr) + offset) = data;
     //*(memory + tlb(vaddr) ) = data;
 }
 
@@ -4708,6 +4791,7 @@ void copyBinaryToMemory() {
     a = 0;
 
     while (a < binaryLength) {
+//	printf("copyBinaryToMemory(): pid: %d. storing mem to %d\n", process_id, a);
         storeMemory(a, loadBinary(a));
 
         a = a + 4;

@@ -1,0 +1,151 @@
+##################################
+## Assignment 5: Virtual Memory ##
+##################################
+implement on-demand paging instead of memory segmentation in the kernel.
+partition the emulated memory (like physical memory on a real machine) into 4KB frames.
+each process gets a 4MB virtual address space, i.e., each process may access any address between 0x0 to 0x3FFFFFF. Virtual address space is organised in 4KB pages
+whenever a process actually accesses an address, allocate a frame and provide a mapping between pages and frames, i.e., a page table for each process
+modify the tlb function accordingly
+provide a demo program that allocates the whole virtual memory space but only accesses, for example, 128 different addresses evenly distributed within that region. Make sure that in this case only 128 frames are actually allocated, not the whole 4MB.
+page replacement and swapping is not required in this assignment
+
+Deadline: November 26, end of day
+
+
+Compile and Run:
+================
+first, compile selfie. then build count (w/ selfie) and afterwards execute count.
+$ gcc selfie.c -o selfie && ./selfie -c count.c -o count && ./selfie -l count -m 32
+./selfie: this is selfie's cstarc compiling count.c
+./selfie: writing code into output file count
+./selfie: loading code from input file count
+./selfie: this is selfie's mipster executing count with 32MB of memory
+
+DEBUG: syscall_malloc(): pid: 0 . allocated 4 bytes
+
+DEBUG: syscall_malloc(): pid: 0 . allocated 8 bytes
+KERNEL
+DEBUG: syscall_malloc(): pid: 1 . allocated 2048000 bytes
+0123456_NEXTKERNEL
+DEBUG: syscall_malloc(): pid: 2 . allocated 2048000 bytes
+0123456_NEXTKERNEL789:;<=>?_NEXTKERNEL789:;<=>?_NEXTKERNEL@ABCDEFGH_NEXTKERNEL@ABCDEFGH_NEXTKERNELIJKLMNOPQ_NEXTKERNELIJKLMNOPQ_NEXTKERNELRSTUVWXY
+******************
+ usage statistics
+ ----------------
+ pages used: 6 
+ mem used: 24576 kbytes 
+******************
+count: exiting with error code 8
+$
+
+Interpretation and Explanation of what happened
+===============================================
+selfie's mipster loads 3 processes into its *memory (please have a look at the previous assignments).
+
+
+-- snip demo --
+dummy = malloc(500 * 1024 * 4);
+
+// print '0' to 'Z' (in asciitable)
+while (i<90) {
+	putchar(i);
+	i = i+1;
+}
+-- /snip demo --
+
+although the demo program "count.c" allocates more space than there's space availible in a 4k page the memory consumption of the emulator is only 24576 kbytes. so, the pages are allocated only when needed (on-the-fly). 
+
+
+-- snip selfie.c --
+[...]
+int loadMemory(int vaddr) {
+    int offset;
+// if (SEGMENTATION)    offset = getsegmentoffset(process_id);
+// if (PAGING)
+        offset = getpageoffset(vaddr);
+    return *(memory + tlb(vaddr & 0xFFF) + offset );
+}
+
+void storeMemory(int vaddr, int data) {
+    int offset;
+//    if (SEGMENTATION)
+//      offset = getsegmentoffset(process_id);
+//    if (PAGING) {
+        offset = getpageoffset(vaddr);
+        if (offset == -1) {
+                offset = newpage(vaddr);
+        }
+//    }
+
+    *(memory + tlb(vaddr & 0xFFF) + offset) = data;
+}
+
+int getpageoffset(int vaddr) {
+        int i;
+        int offset;
+        int val;
+        int found;
+
+        offset = -1;
+        for (i = 0; i< pages_used; i++) {
+                val = (process_id << 14) | ((vaddr & 0x3FFFC00) >> 12);
+                if (*(pagetable + i) == val) {
+                        // found
+                        offset = 4096 * i; // 4096=pagesize
+                        break;
+                }
+        }
+        return offset;
+}
+[...]
+-- /snip selfie.c --
+
+pagetables
+==========
+
+each 32 bit address is spitted up into two parts: pagetable and offset, i.e.:
+
+32 bit virtual address
+----------------------
+00000000 00000000 00000000 00000000 (2, binary)
+      ^--------------^
+   pagetable lookup (14bit)
+                      ^-----------^
+                      offset (12bit)
+
+the first 6 bits are ignored.
+
+pagetable
+---------
+i.e. 00000000 0000000 00000000 00000000 (2, binary)
+     ^-----------------^
+           pid (18bit)    
+                        ^-------------^
+                     pagetable lookup (14bit)
+
+
+example of calculation of physical address (from pid & virtual address)
+-----------------------------------------------------------------------
+given:
+pid: 1,
+virtual address: 000000000 00000000 00100000 000000011 (2)
+and pagetable w/ one entry: pagetbable[0]: 00000000 00000000 01000000 00000010 (2)
+
+lookup process:
+1) caluclate pagetableentry from pid & pagetable lookup
+00000000 00000000 01000000 00000010 (2)
+                   ^-PID         ^--pagetable lookup
+
+2) loop though all pagetable entries
+as only one one entry in pagetable and this entry matches 1) calculated pagetableentry -> index is determined.
+
+index: 0 (from pagetable[0]): this is the page index.
+
+offset = index * 4096 (4k)
+here: offset = 0
+
+physical address = offset + offset from virtual address
+here: 0 + 0x11 = 0x11.
+
+
+

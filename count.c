@@ -1,5 +1,6 @@
 int main() {
 	int i;
+	int *dummy;
 	int pid;
 
 	int rr_pid;
@@ -35,21 +36,14 @@ int main() {
 	} else {
 		// non-kernel processes
 		i=48;
+		dummy = malloc(500 * 1024 * 4);
 
-		lock();
+
 		// print '0' to 'Z' (in asciitable)
 		while (i<90) {
 			putchar(i);
 			i = i+1;
 		}
-		unlock();
-	
-		i=48;	
-		while (i<90) {
-                        putchar(i);
-                        putchar(i);
-                        i = i+1;
-                }
 		exit(8);
 	}
 
