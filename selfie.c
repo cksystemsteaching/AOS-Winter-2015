@@ -884,6 +884,18 @@ int *virtualMemory;
 int freeListPointer = 1;
 int pagingFlag = 0; //paging turned off
 
+// --------------------ASSIGNEMNT 6+7 -------------------------------
+
+int *getPageTableStart(int pID);
+int pageFault = 0;
+void checkPageFault(int vaddr);
+int freeListKernel = 0;
+int flag = 0;
+int pageTableAdress = 0;
+int counterRun = 0;
+int loadFlag = 0;
+
+
 // ------------------------- INITIALIZATION ------------------------
 
 void initInterpreter() {
@@ -3370,6 +3382,10 @@ int tlb(int vaddr) {
             return adr/4;
         }
     }
+    if(loadFlag == 1){
+        adr = searchPageTable(vaddr);
+        return adr/4;
+    }
     else{
         if(tlb_debug == 1){
             if(process !=0){
@@ -3400,32 +3416,66 @@ int tlb(int vaddr) {
 int searchPageTable(int vaddr){
     int i;
     int frame;
-    int offest;
+    int offset;
+    int debugFlag = 0;
     
     frame = vaddr/4096;
-    offest = vaddr%4096;
+    offset = vaddr%4096;
     
     if(*(pageTable+frame)==0){
-        *(pageTable+frame) = freeList;
-        memCopy(virtualMemory+(segmentStart+frame*4096)/4, freeList,1024);
-        freeList = freeList+1024;
-        
-        return *(pageTable+frame)-(int)(memory)+offest;
+        pageFault == 1;
+        *(pageTable+frame) = freeListKernel;//freeList;
+        freeListKernel = freeListKernel + 4096;
+
+        return *(pageTable+frame)+offset;
     }
     else{
-            return *(pageTable+frame)-(int)(memory)+offest;
+        return *(pageTable+frame)+offset;
         
     }
     
  
 }
 
+void checkPageFault (int vaddr){
+    int frame;
+    int offset;
+
+    frame = vaddr/4096;
+    offset = vaddr%4096;
+    
+    
+    if(*(pageTable+frame)==0){
+        pageFault = 1;
+        *(memory+communicationSegment+41) = vaddr;
+    }
+
+}
+
+
 int loadMemory(int vaddr) {
+    
+    if(process != 0){
+        checkPageFault(vaddr);
+    
+        if(pageFault == 1){
+            return 0;
+        }
+    }
     
     return *(memory + tlb(vaddr));
 }
 
 void storeMemory(int vaddr, int data) {
+    
+    if(process != 0){
+        checkPageFault(vaddr);
+        
+        if(pageFault == 1){
+            return;
+        }
+    }
+    
     *(memory + tlb(vaddr)) = data;
 }
 
@@ -3894,9 +3944,15 @@ void syscall_switch(){
 
     if(*(memory+communicationSegment+20) == 0){
         pageTable = malloc(4*1024); //ADDED A5
+        
+        print("allocating  in emulator pageTable ");
+        print(itoa(process,string_buffer,10,0));
+        println();
+        
+        exit(0);
     }
     else{
-        pageTable = *(memory+communicationSegment+20);
+        pageTable = memory + (*(memory+communicationSegment+20))/4;
     }
 
     
@@ -3947,8 +4003,8 @@ void syscall_yield(){
     *(memory+communicationSegment+17) = *(registers+REG_GP);
     *(memory+communicationSegment+18) = *(registers+REG_SP);
     *(memory+communicationSegment+19) = *(registers+REG_K1);
-    *(memory+communicationSegment+20) = pageTable;
-    
+    *(memory+communicationSegment+20) = (int)(pageTable)-(int)(memory);//pageTable;
+   
     restoreKernelState();
 
 }
@@ -4082,6 +4138,9 @@ int main_os(){
     initInterpreter();
     readyqueue = 0;
     
+    loadFlag = 1;
+    freeListKernel = 2097152;
+    
     loadProcess("test.mips",2);
     segmentStart = segmentStart + segSize;
     loadProcess("test.mips",3);
@@ -4090,8 +4149,8 @@ int main_os(){
     segmentStart = segmentStart + segSize;
     loadProcess("test.mips",5);
     
+    loadFlag = 0;
    
-    
     *(secondSegmentStart+40) = 1;//turn on paging
 
     *(secondSegmentStart+30) = -1;  //set flag to -1
@@ -4112,6 +4171,8 @@ void interpretEnvent(){
     int *secondSegmentStart;
     int flag;
     
+    int frame;
+    
     secondSegmentStart =  4*1024*1024;
     flag = *(secondSegmentStart+30);
     
@@ -4119,10 +4180,11 @@ void interpretEnvent(){
     // -1   START, FIRST PROCESS TO BE LOADED
     //  1   PROCESS CALLED LOCK
     //  2   PROCESS CALLED UNLOCK
+    //  4   PAGE FAULT
     //  0   ELSE , LOAD NEW PROCESS
     
-    
-    if(flag == -1){                            
+    if(flag == -1){
+        
         process = pop(readyqueue);
         segment = getProcessSegPointer(process);
         
@@ -4143,11 +4205,12 @@ void interpretEnvent(){
     }
     
     else if(flag == 1){
+        
         processLock = getProcessId(process);
         *(secondSegmentStart+10) = 1; //switch
     }
     else if(flag == 2){
-        
+      
         if(processLock == getProcessId(process)){
             processLock = 0;
             *(secondSegmentStart+30) = 0;
@@ -4172,8 +4235,23 @@ void interpretEnvent(){
         }
 
     }
+    else if(flag == 4){ //page fault
+        
+        pageTable = *(secondSegmentStart+20);
+        frame = *(secondSegmentStart+41) / 4096;    //adr saved before in *(secondSegmentStart+41)
+        
+        *(pageTable+frame) = freeListKernel;
+        
+        freeListKernel = freeListKernel + 4096;
+        
+        *(secondSegmentStart+30) = 0; //set flag back to 0
+        *(secondSegmentStart+10) = 1; //switch
+
+    
+    }
     
     else{
+       
         push(memory,*(secondSegmentStart+12),*(secondSegmentStart+13),*(secondSegmentStart+14),*(secondSegmentStart+11),getProcessId(process),segment,*(secondSegmentStart+17),*(secondSegmentStart+18),*(secondSegmentStart+19),*(secondSegmentStart+20),readyqueue);
     
         
@@ -4194,18 +4272,14 @@ void interpretEnvent(){
         *(secondSegmentStart+10) = 1; //switch
 
     }
-    
-    
-    
 }
-
 
 void loadProcess(int * name, int id){
     int *segment;
 
     binaryName = name;
     binaryLength = 0;
-    //process =5;
+    pageTable = getPageTableStart(id);
     loadBinary();
     
     *(registers+REG_GP) = binaryLength;
@@ -4221,7 +4295,15 @@ void loadProcess(int * name, int id){
 
 }
 
-
+int *getPageTableStart(int pId){
+    int *pageTableStart;
+    int *pageTableProcess;
+    
+    pageTableStart= 6*1024*1024;  // second part of the communication segment
+    pageTableProcess= pageTableStart + (pId * 1024);
+    
+    return pageTableProcess;
+}
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
 // ---------------------     E M U L A T O R   ---------------------
@@ -4497,7 +4579,9 @@ void op_lw() {
 
     *(registers+rt) = loadMemory(vaddr);
 
+    if(pageFault == 0){
     pc = pc + 4;
+    }
 
     if (debug_disassemble) {
         printOpcode(opcode);
@@ -4539,7 +4623,10 @@ void op_sw() {
 
     storeMemory(vaddr, *(registers+rt));
 
-    pc = pc + 4;
+    if(pageFault == 0){
+        pc = pc + 4;
+    }
+    //pc = pc + 4;
 
     if (debug_disassemble) {
         printOpcode(opcode);
@@ -4671,25 +4758,40 @@ void run(){
 
     while (1) {
         fetch();
-        decode();
-        pre_debug();
-        execute();
-        post_debug();
-
-        if(*(memory+communicationSegment+10) == 1){
-            syscall_switch();
-        }
-        //if(numberofInstructions == 25){
-        //    if(process !=0){
-         //       syscall_yield();
         
-         //   }
-        //}
-        if(*(memory+communicationSegment+40) == 1){
-            turnOnPaging();
+        if(pageFault == 0){
+            decode();
+            pre_debug();
+            execute();
+            post_debug();
+
+            if(*(memory+communicationSegment+10) == 1){
+                syscall_switch();
+            }
+            
+            
+            if(*(memory+communicationSegment+40) == 1){
+                turnOnPaging();
+            }
+        
         }
+        
+        if(pageFault == 1){
+            pageFault = 0;
+            numberofInstructions = numberofInstructions + 1;
+            *(memory+communicationSegment+30) = 4;
+            syscall_yield();
+        }
+        
+        //if(numberofInstructions > 2){
+          //  if(process !=0){
+          //      syscall_yield();
+          //  }
+        
+        //}
         
         numberofInstructions = numberofInstructions + 1;
+
     }
 
 }
@@ -4832,11 +4934,7 @@ int main_emulator(int argc, int *argv) {
 }
 
 void turnOnPaging(){
-    virtualMemory = memory;
-    memory =  malloc(64 * 1024 * 1024);
-    freeList = (memory + 2097152);      //paging after second segment
-    
-    memCopy(virtualMemory,memory,2097152); //copy OS segment and communication segment
+   
     pagingFlag = 1;
     *(memory+communicationSegment+40) = 2; //turn of syscall
     
@@ -4929,7 +5027,6 @@ void createProcess(int *head, int pId){
         newRegisters = (int*)malloc(32*4);
         memCopy(memory,memory+getSegmentStart(segment)/4,segSize/4);
 
-        //memCopy(memory+(segSize*2)/4,memory+getSegmentStart(segment)/4,segSize/4);
         memCopy(registers,newRegisters,32);
         
     
