@@ -1,3 +1,69 @@
+// Copyright (c) 2015, the Selfie Project authors. All rights reserved.
+// Please see the AUTHORS file for details. Use of this source code is
+// governed by a BSD license that can be found in the LICENSE file.
+//
+// Selfie is a project of the Computational Systems Group at the
+// Department of Computer Sciences of the University of Salzburg
+// in Austria. For further information and code please refer to:
+//
+// http://selfie.cs.uni-salzburg.at
+//
+// The Selfie Project provides an educational platform for teaching
+// undergraduate and graduate students the design and implementation
+// of programming languages and runtime systems. The focus is on the
+// construction of compilers, libraries, operating systems, and even
+// virtual machine monitors. The common theme is to identify and
+// resolve self-reference in systems code which is seen as the key
+// challenge when teaching systems engineering, hence the name.
+//
+// Selfie is a fully self-referential 5k-line C implementation of:
+//
+// 1. a self-compiling compiler called cstarc that compiles
+//    a tiny but powerful subset of C called C Star (C*) to
+//    a tiny but powerful subset of MIPS32 called MIPSter,
+// 2. a self-executing emulator called mipster that executes
+//    MIPSter code including itself when compiled with cstarc, and
+// 3. a tiny C* library called libcstar utilized by cstarc and mipster.
+//
+// Selfie is kept minimal for simplicity and implemented in a single file.
+// There is neither a linker nor an assembler. However, there is a simple
+// profiler and disassembler and even a simple debugger as well as minimal
+// operating system support in the form of MIPS32 o32 system calls built
+// into the emulator.
+//
+// C* is a tiny Turing-complete subset of C that includes dereferencing
+// (the * operator) but excludes data structures, bitwise and Boolean
+// operators, and many other features. There are only signed 32-bit
+// integers and pointers as well as character and string constants.
+// This choice turns out to be helpful for students to understand the
+// true role of composite data structures such as arrays and records.
+// Bitwise operations are implemented in libcstar using signed integer
+// arithmetics helping students gain true understanding of two's complement.
+// C* is supposed to be close to the minimum necessary for implementing
+// a self-compiling, single-pass, recursive-descent compiler. C* can be
+// taught in around two weeks of classes depending on student background.
+//
+// The compiler can readily be extended to compile features missing in C*
+// and to improve performance of the generated code. The compiler generates
+// MIPSter executables that can directly be executed by the emulator or
+// written to a file in a simple, custom-defined format. Support of standard
+// MIPS32 ELF binaries should be easy but remains future work.
+//
+// MIPSter is a tiny Turing-complete subset of the MIPS32 instruction set.
+// It only features arithmetic, memory, and control-flow instructions but
+// neither bitwise nor byte-level instructions. MIPSter can be properly
+// explained in a single week of classes.
+//
+// The emulator implements minimal operating system support that is meant
+// to be extended by students, first as part of the emulator, and then
+// ported to run on top of it, similar to an actual operating system or
+// virtual machine monitor. The fact that the emulator can execute itself
+// helps exposing the self-referential nature of that challenge.
+//
+// Selfie is the result of many years of teaching systems engineering.
+// The design of the compiler is inspired by the Oberon compiler of
+// Professor Niklaus Wirth from ETH Zurich.
+
 int *selfieName = (int*) 0;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -127,7 +193,7 @@ void initScanner();
 void resetScanner();
 
 void printSymbol(int symbol);
-void printLineNumber(int* message);
+void printLineNumber(int* message, int line);
 
 void syntaxErrorMessage(int *message);
 void syntaxErrorCharacter(int character);
@@ -205,66 +271,58 @@ int *sourceName = (int*) 0; // name of source file
 int sourceFD    = 0;        // file descriptor of open source file
 
 // ------------------------ OWN GLOBAL VARIABLES -----------------------------------
-// ready queue
-int* ready_queue;
-// process list
-int* process_list;
-// number of instructions for one process in one run
-int numb_of_instr;
-// Address of the actual running process
-int* running_process;
-// Address of the kernel process
-int* kernel_process;
-// Frame Table
-int* frame_table;
+
+// variable if there was a trap
+int trap_flag;
 // Number of ticks each Process can run
 int ticks;
-// Number of Processes
+// Number of Processes without the kernel-process
 int number_of_processes;
 // Number of Processes plus the kernel-process
 int all_processes;
-// id of the running process
-int running_process_id;
-// variable if kernel is booting
-int booting;
+// process list
+int* process_list;
+// ready queue
+int* ready_queue;
 // blocked queue
 int* blocked_queue;
+// Pointer to the actual running process
+int* running_process;
+// id of the running process
+int running_process_id;
+// Pointer to the kernel process
+int* kernel_process;
+// Current frame number
+int current_frame_number;
 // Global lock
 int* lock;
 // Debugging Variable for locking which indicates the next Process who needs the lock
 int debug_locking = 1;
-// Variable for if printing or not...
-int prints;
-// one page has 4 KB size
-int PAGE_SIZE = 4096;
-// one frame has 4 KB size
-int FRAME_SIZE = 4096;
-// Current frame number
-int current_frame_number;
+// Frame Table
+int* frame_table;
 // Maximal number of frames for the demo of assingnment 5
 int max_frames = 128;
+// one frame has 4 KB size
+int FRAME_SIZE = 4096;
+// one page has 4 KB size
+int PAGE_SIZE = 4096;
 
 int randomaddress = 0;
 
-int* prev_node;
-int* prev_process;
-int* next_node;
 int* next_process;
+int* prev_entry;
+int* prev_process;
+int* next_entry;
 
-void create_ready_queue(int n, int m);
+// ------------------------ OWN GLOBAL Methods -----------------------------------
+
 int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo);
 void create_frame_table();
-int* initializeList(int *list);
-int* addToList(int *list, int data);
+void create_ready_queue(int n);
 void printListPID(int *list);
 void printListPC(int *list);
-int sizeOfList(int *list);
-int getNodeFromList(int *list, int nthNode);
-int* deleteFirstNodeFromList(int *list);
-int* getNodeByIdFromProcessList(int id);
-void schedule_and_switch();
 int* create_page_table_entry(int pagenumber , int* physical_address);
-void printPageTable();
+int* getNodeByIdFromProcessList(int id);
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -317,23 +375,28 @@ void resetScanner() {
 
 void resetGlobalSymbolTable();
 
-void createSymbolTableEntry(int which, int *string, int data, int class, int type, int value);
+void createSymbolTableEntry(int which, int *string, int line, int class, int type, int value, int reference);
 int* getSymbolTableEntry(int *string, int class, int *symbol_table);
+
+int isUndefinedProcedure(int *entry);
+int reportUndefinedProcedures(int *symbol_table);
 
 int* getNext(int *entry);
 int* getString(int *entry);
-int  getData(int *entry);
+int  getLineNumber(int *entry);
 int  getClass(int *entry);
 int  getType(int *entry);
 int  getValue(int *entry);
+int  getReference(int *entry);
 int  getRegister(int *entry);
 
 void setNext(int *entry, int *next);
 void setString(int *entry, int *identifier);
-void setData(int *entry, int data);
+void setLineNumber(int *entry, int line);
 void setClass(int *entry, int class);
 void setType(int *entry, int type);
 void setValue(int *entry, int value);
+void setReference(int *entry, int reference);
 void setRegister(int *entry, int reg);
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
@@ -416,7 +479,6 @@ int allocatedTemporaries = 0; // number of allocated temporaries
 
 int allocatedMemory = 0; // number of bytes for global variables and strings
 
-int mainJumpAddress = 0; // address of main function
 int returnBranches  = 0; // fixup chain for return statements
 
 int *currentProcedureName = (int*) 0; // name of currently parsed procedure
@@ -698,6 +760,9 @@ void syscall_munlock();
 void emitSwitch();
 void syscall_switch();
 
+void emitTrap();
+void syscall_trap();
+
 void emitGetpid();
 void syscall_getpid();
 
@@ -709,18 +774,19 @@ void syscall_flush_page_in_context();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
-int SYSCALL_EXIT    	= 4001;
-int SYSCALL_READ    	= 4003;
-int SYSCALL_WRITE   	= 4004;
-int SYSCALL_OPEN    	= 4005;
-int SYSCALL_MALLOC  	= 5001;
-int SYSCALL_SCHED_YIELD = 5003;
-int SYSCALL_MLOCK       = 5004;
-int SYSCALL_MUNLOCK     = 5005;
-int SYSCALL_SWITCH  	= 5006;
-int SYSCALL_GETPID      = 5007;
-int SYSCALL_MAP		= 5008;
-int SYSCALL_UNMAP	= 5009;
+int SYSCALL_EXIT   	= 4001;
+int SYSCALL_READ   	= 4003;
+int SYSCALL_WRITE  	= 4004;
+int SYSCALL_OPEN   	= 4005;
+int SYSCALL_MALLOC  	= 4006;
+int SYSCALL_SCHED_YIELD = 5001;
+int SYSCALL_MLOCK       = 5002;
+int SYSCALL_MUNLOCK     = 5003;
+int SYSCALL_SWITCH  	= 5004;
+int SYSCALL_TRAP	= 5005;
+int SYSCALL_GETPID      = 5006;
+int SYSCALL_MAP		= 5007;
+int SYSCALL_UNMAP	= 5008;
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -788,7 +854,7 @@ void fct_subu();
 void op_lw();
 void fct_slt();
 void op_sw();
-void op_teq();
+void fct_teq();
 
 // -----------------------------------------------------------------
 // -------------------------- INTERPRETER --------------------------
@@ -823,12 +889,10 @@ void emulate(int argc, int *argv);
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
-int debug_read    	    = 0;
-int debug_write   	    = 0;
-int debug_open    	    = 0;
-int debug_malloc  	    = 0;
-int debug_sched_yield       = 1;
-int debug_switch	    = 1;
+int debug_read    = 0;
+int debug_write   = 0;
+int debug_open    = 0;
+int debug_malloc  = 0;
 
 int EXCEPTION_SIGNAL             = 1;
 int EXCEPTION_ADDRESSERROR       = 2;
@@ -1250,19 +1314,19 @@ void printSymbol(int symbol) {
     putCharacter(CHAR_DOUBLEQUOTE);
 }
 
-void printLineNumber(int* message) {
+void printLineNumber(int* message, int line) {
     print(selfieName);
     print((int*) ": ");
     print(message);
     print((int*) " in ");
     print(sourceName);
     print((int*) " in line ");
-    print(itoa(lineNumber, string_buffer, 10, 0, 0));
+    print(itoa(line, string_buffer, 10, 0, 0));
     print((int*) ": ");
 }
 
 void syntaxErrorMessage(int *message) {
-    printLineNumber((int*) "error");
+    printLineNumber((int*) "error", lineNumber);
 
     print(message);
 
@@ -1270,7 +1334,7 @@ void syntaxErrorMessage(int *message) {
 }
 
 void syntaxErrorCharacter(int expected) {
-    printLineNumber((int*) "error");
+    printLineNumber((int*) "error", lineNumber);
 
     printCharacter(expected);
     print((int*) " expected but ");
@@ -1642,7 +1706,7 @@ int getSymbol() {
         symbol = SYM_MOD;
 
     } else {
-        printLineNumber((int*) "error");
+        printLineNumber((int*) "error", lineNumber);
         print((int*) "found unknown character ");
         printCharacter(character);
 
@@ -1658,27 +1722,29 @@ int getSymbol() {
 // ------------------------- SYMBOL TABLE --------------------------
 // -----------------------------------------------------------------
 
-void createSymbolTableEntry(int whichTable, int *string, int data, int class, int type, int value) {
+void createSymbolTableEntry(int whichTable, int *string, int line, int class, int type, int value, int reference) {
     int *newEntry;
 
     // symbol table entry:
-    // +----+----------+
-    // |  0 | next     | pointer to next entry
-    // |  1 | string   | identifier string, string constant
-    // |  2 | data     | VARIABLE: offset, FUNCTION: address, STRING: offset
-    // |  3 | class    | VARIABLE, FUNCTION, STRING
-    // |  4 | type     | INT_T, INTSTAR_T, VOID_T
-    // |  5 | value    | VARIABLE: constant value
-    // |  6 | register | REG_GP, REG_FP
-    // +----+----------+
+    // +----+-----------+
+    // |  0 | next      | pointer to next entry
+    // |  1 | string    | identifier string, string constant
+    // |  2 | line      | source line number
+    // |  3 | class     | VARIABLE, FUNCTION, STRING
+    // |  4 | type      | INT_T, INTSTAR_T, VOID_T
+    // |  5 | value     | VARIABLE: constant value
+    // |  6 | reference | VARIABLE: offset, FUNCTION: address, STRING: offset
+    // |  7 | register  | REG_GP, REG_FP
+    // +----+-----------+
 
-    newEntry = malloc(7 * 4);
+    newEntry = malloc(8 * 4);
 
     setString(newEntry, string);
-    setData(newEntry, data);
+    setLineNumber(newEntry, line);
     setClass(newEntry, class);
     setType(newEntry, type);
     setValue(newEntry, value);
+    setReference(newEntry, reference);
 
     // create entry at head of symbol table
     if (whichTable == GLOBAL_TABLE) {
@@ -1705,6 +1771,39 @@ int* getSymbolTableEntry(int *string, int class, int *symbol_table) {
     return (int*) 0;
 }
 
+int isUndefinedProcedure(int *entry) {
+    if (getClass(entry) == FUNCTION) {
+        if (getReference(entry) == 0)
+            return 1;
+        else if (getOpcode(loadBinary(getReference(entry))) == OP_JAL)
+            return 1;
+    }
+
+    return 0;
+}
+
+int reportUndefinedProcedures(int *symbol_table) {
+    int undefined;
+
+    undefined = 0;
+
+    while ((int) symbol_table != 0) {
+        if (isUndefinedProcedure(symbol_table)) {
+            undefined = 1;
+
+            printLineNumber((int*) "error", getLineNumber(symbol_table));
+            print(getString(symbol_table));
+            print((int*) " undefined");
+            println();
+        }
+
+        // keep looking
+        symbol_table = getNext(symbol_table);
+    }
+
+    return undefined;
+}
+
 int* getNext(int *entry) {
     // cast only works if size of int and int* is equivalent
     return (int*) *entry;
@@ -1715,7 +1814,7 @@ int* getString(int *entry) {
     return (int*) *(entry + 1);
 }
 
-int getData(int *entry) {
+int getLineNumber(int *entry) {
     return *(entry + 2);
 }
 
@@ -1731,8 +1830,12 @@ int getValue(int *entry) {
     return *(entry + 5);
 }
 
-int getRegister(int *entry) {
+int getReference(int *entry) {
     return *(entry + 6);
+}
+
+int getRegister(int *entry) {
+    return *(entry + 7);
 }
 
 void setNext(int *entry, int *next) {
@@ -1745,8 +1848,8 @@ void setString(int *entry, int *identifier) {
     *(entry + 1) = (int) identifier;
 }
 
-void setData(int *entry, int data) {
-    *(entry + 2) = data;
+void setLineNumber(int *entry, int line) {
+    *(entry + 2) = line;
 }
 
 void setClass(int *entry, int class) {
@@ -1761,8 +1864,12 @@ void setValue(int *entry, int value) {
     *(entry + 5) = value;
 }
 
+void setReference(int *entry, int reference) {
+    *(entry + 6) = reference;
+}
+
 void setRegister(int *entry, int reg) {
-    *(entry + 6) = reg;
+    *(entry + 7) = reg;
 }
 
 // -----------------------------------------------------------------
@@ -1891,8 +1998,8 @@ int lookForType() {
 }
 
 void talloc() {
-    // we use registers REG_T0-REG_T9 and REG_S0-REG_S7 for temporaries
-    if (allocatedTemporaries < REG_T9 - REG_A3)
+    // we use registers REG_T0-REG_T7 for temporaries
+    if (allocatedTemporaries < REG_T7 - REG_A3)
         allocatedTemporaries = allocatedTemporaries + 1;
     else {
         syntaxErrorMessage((int*) "out of registers");
@@ -1922,7 +2029,7 @@ int previousTemporary() {
 }
 
 int nextTemporary() {
-    if (allocatedTemporaries < REG_T9 - REG_A3)
+    if (allocatedTemporaries < REG_T7 - REG_A3)
         return currentTemporary() + 1;
     else {
         syntaxErrorMessage((int*) "out of registers");
@@ -1962,7 +2069,7 @@ void restore_temporaries(int numberOfTemporaries) {
 }
 
 void syntaxErrorSymbol(int expected) {
-    printLineNumber((int*) "error");
+    printLineNumber((int*) "error", lineNumber);
 
     printSymbol(expected);
     print((int*) " expected but ");
@@ -1974,7 +2081,7 @@ void syntaxErrorSymbol(int expected) {
 }
 
 void syntaxErrorUnexpected() {
-    printLineNumber((int*) "error");
+    printLineNumber((int*) "error", lineNumber);
 
     print((int*) "unexpected symbol ");
     printSymbol(symbol);
@@ -1995,7 +2102,7 @@ int* putType(int type) {
 }
 
 void typeWarning(int expected, int found) {
-    printLineNumber((int*) "warning");
+    printLineNumber((int*) "warning", lineNumber);
 
     print((int*) "type mismatch, ");
 
@@ -2019,10 +2126,8 @@ int* getVariable(int *variable) {
         entry = getSymbolTableEntry(variable, VARIABLE, global_symbol_table);
 
         if (entry == (int*) 0) {
-            printLineNumber((int*) "error");
-
+            printLineNumber((int*) "error", lineNumber);
             print(variable);
-
             print((int*) " undeclared");
             println();
 
@@ -2040,7 +2145,7 @@ int load_variable(int *variable) {
 
     talloc();
 
-    emitIFormat(OP_LW, getRegister(entry), currentTemporary(), getData(entry));
+    emitIFormat(OP_LW, getRegister(entry), currentTemporary(), getReference(entry));
 
     return getType(entry);
 }
@@ -2097,7 +2202,7 @@ void load_string() {
     if (l % 4 != 0)
         allocatedMemory = allocatedMemory + 4 - l % 4;
 
-    createSymbolTableEntry(GLOBAL_TABLE, string, -allocatedMemory, STRING, INTSTAR_T, 0);
+    createSymbolTableEntry(GLOBAL_TABLE, string, lineNumber, STRING, INTSTAR_T, 0, -allocatedMemory);
 
     talloc();
 
@@ -2109,7 +2214,7 @@ int help_call_codegen(int *entry, int *procedure) {
 
     if (entry == (int*) 0) {
         // CASE 1: function call, no definition, no declaration.
-        createSymbolTableEntry(GLOBAL_TABLE, procedure, binaryLength, FUNCTION, INT_T, 0);
+        createSymbolTableEntry(GLOBAL_TABLE, procedure, lineNumber, FUNCTION, INT_T, 0, binaryLength);
 
         emitJFormat(OP_JAL, 0);
 
@@ -2118,19 +2223,19 @@ int help_call_codegen(int *entry, int *procedure) {
     } else {
         type = getType(entry);
 
-        if (getData(entry) == 0) {
+        if (getReference(entry) == 0) {
             // CASE 2: function call, no definition, but declared.
-            setData(entry, binaryLength);
+            setReference(entry, binaryLength);
 
             emitJFormat(OP_JAL, 0);
-        } else if (getOpcode(loadBinary(getData(entry))) == OP_JAL) {
+        } else if (getOpcode(loadBinary(getReference(entry))) == OP_JAL) {
             // CASE 3: function call, no declaration
-            emitJFormat(OP_JAL, getData(entry) / 4);
+            emitJFormat(OP_JAL, getReference(entry) / 4);
 
-            setData(entry, binaryLength - 8);
+            setReference(entry, binaryLength - 8);
         } else
             // CASE 4: function defined, use the address
-            emitJFormat(OP_JAL, getData(entry) / 4);
+            emitJFormat(OP_JAL, getReference(entry) / 4);
     }
 
     return type;
@@ -2906,7 +3011,7 @@ void gr_statement() {
             if (ltype != rtype)
                 typeWarning(ltype, rtype);
 
-            emitIFormat(OP_SW, getRegister(entry), currentTemporary(), getData(entry));
+            emitIFormat(OP_SW, getRegister(entry), currentTemporary(), getReference(entry));
 
             tfree(1);
 
@@ -2963,28 +3068,29 @@ void gr_variable(int offset) {
     type = gr_type();
 
     if (symbol == SYM_IDENTIFIER) {
-        createSymbolTableEntry(LOCAL_TABLE, identifier, offset, VARIABLE, type, 0);
+        createSymbolTableEntry(LOCAL_TABLE, identifier, lineNumber, VARIABLE, type, 0, offset);
 
         getSymbol();
     } else {
         syntaxErrorSymbol(SYM_IDENTIFIER);
 
-        createSymbolTableEntry(LOCAL_TABLE, (int*) "missing variable name", offset, VARIABLE, type, 0);
+        createSymbolTableEntry(LOCAL_TABLE, (int*) "missing variable name", lineNumber, VARIABLE, type, 0, offset);
     }
 }
 
 void gr_initialization(int *name, int offset, int type) {
+    int actualLineNumber;
     int hasCast;
     int cast;
     int sign;
+
+    actualLineNumber = lineNumber;
 
     initialValue = 0;
 
     hasCast = 0;
 
-    if (symbol == SYM_SEMICOLON)
-        getSymbol();
-    else if (symbol == SYM_ASSIGN) {
+    if (symbol == SYM_ASSIGN) {
         getSymbol();
 
         // optional cast: [ cast ]
@@ -3037,7 +3143,7 @@ void gr_initialization(int *name, int offset, int type) {
         else
             syntaxErrorSymbol(SYM_SEMICOLON);
     } else
-        syntaxErrorUnexpected();
+        syntaxErrorSymbol(SYM_ASSIGN);
 
     if (hasCast) {
         if (type != cast)
@@ -3045,7 +3151,7 @@ void gr_initialization(int *name, int offset, int type) {
     } else if (type != INT_T)
         typeWarning(type, INT_T);
 
-    createSymbolTableEntry(GLOBAL_TABLE, name, offset, VARIABLE, type, initialValue);
+    createSymbolTableEntry(GLOBAL_TABLE, name, actualLineNumber, VARIABLE, type, initialValue, offset);
 }
 
 void gr_procedure(int *procedure, int returnType) {
@@ -3082,7 +3188,7 @@ void gr_procedure(int *procedure, int returnType) {
 
             while (parameters < numberOfParameters) {
                 // 8 bytes offset to skip frame pointer and link
-                setData(entry, parameters * 4 + 8);
+                setReference(entry, parameters * 4 + 8);
 
                 parameters = parameters + 1;
                 entry      = getNext(entry);
@@ -3101,7 +3207,7 @@ void gr_procedure(int *procedure, int returnType) {
         entry = getSymbolTableEntry(currentProcedureName, FUNCTION, global_symbol_table);
 
         if (entry == (int*) 0)
-            createSymbolTableEntry(GLOBAL_TABLE, currentProcedureName, 0, FUNCTION, returnType, 0);
+            createSymbolTableEntry(GLOBAL_TABLE, currentProcedureName, lineNumber, FUNCTION, returnType, 0, 0);
 
         getSymbol();
 
@@ -3109,34 +3215,32 @@ void gr_procedure(int *procedure, int returnType) {
     } else if (symbol == SYM_LBRACE) {
         functionStart = binaryLength;
 
-        getSymbol();
-
         entry = getSymbolTableEntry(currentProcedureName, FUNCTION, global_symbol_table);
 
         if (entry == (int*) 0)
-            createSymbolTableEntry(GLOBAL_TABLE, currentProcedureName, binaryLength, FUNCTION, returnType, 0);
+            createSymbolTableEntry(GLOBAL_TABLE, currentProcedureName, lineNumber, FUNCTION, returnType, 0, binaryLength);
         else {
-            if (getData(entry) != 0) {
-                if (getOpcode(loadBinary(getData(entry))) == OP_JAL)
-                    fixlink_absolute(getData(entry), functionStart);
+            if (getReference(entry) != 0) {
+                if (getOpcode(loadBinary(getReference(entry))) == OP_JAL)
+                    fixlink_absolute(getReference(entry), functionStart);
                 else {
-                    printLineNumber((int*) "error");
-
+                    printLineNumber((int*) "error", lineNumber);
                     print((int*) "multiple definitions of ");
-
                     print(currentProcedureName);
-
                     println();
                 }
             }
 
-            setData(entry, functionStart);
+            setLineNumber(entry, lineNumber);
+            setReference(entry, functionStart);
 
             if (getType(entry) != returnType)
                 typeWarning(getType(entry), returnType);
 
             setType(entry, returnType);
         }
+
+        getSymbol();
 
         localVariables = 0;
 
@@ -3225,9 +3329,9 @@ void gr_cstar() {
 
                     // type identifier ";" global variable declaration
                     if (symbol == SYM_SEMICOLON) {
-                        getSymbol();
+                        createSymbolTableEntry(GLOBAL_TABLE, variableOrProcedureName, lineNumber, VARIABLE, type, 0, -allocatedMemory);
 
-                        createSymbolTableEntry(GLOBAL_TABLE, variableOrProcedureName, -allocatedMemory, VARIABLE, type, 0);
+                        getSymbol();
 
                     // type identifier "=" global variable definition
                     } else
@@ -3256,9 +3360,7 @@ void emitMainEntry() {
     // instruction at address zero cannot be fixed up, so just put a NOP there
     emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_NOP);
 
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "main", binaryLength, FUNCTION, INT_T, 0);
-
-    mainJumpAddress = binaryLength;
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "main", 0, FUNCTION, INT_T, 0, binaryLength);
 
     // jump and link to main, will return here only if there is no exit call
     emitJFormat(OP_JAL, 0);
@@ -3319,11 +3421,12 @@ void compile() {
     emitPutchar();
     emitSchedYield();
     emitSwitch();
+    emitTrap();
     emitMlock();
     emitMunlock();
     emitGetpid();
-    emitMapPageInContext;
-    emitFlushPageInContext;
+    emitMapPageInContext();
+    emitFlushPageInContext();
 
     // parser
     gr_cstar();
@@ -3334,14 +3437,255 @@ void compile() {
     // emit global variables and strings
     emitGlobalsStrings();
 
-    if (getInstrIndex(loadBinary(mainJumpAddress)) == 0) {
-        print(selfieName);
-        print((int*) ": main function missing in ");
-        print(sourceName);
-        println();
-
+    if (reportUndefinedProcedures(global_symbol_table))
         exit(-1);
+}
+
+// Assignment 0 -- Implementation of a LINKED LIST
+
+//Initialization of a LINKED LIST
+int *init_list() {
+	int *list;
+    	int *head;
+    	int *tail;
+	int size;
+
+	head = (int*) 0;
+	tail = (int*) 0;
+	size = 0;
+
+    	list = (int*) malloc(3 * 4);
+
+    	*list = (int) head;
+    	*(list + 1) = (int) tail;
+    	*(list + 2) = size;
+
+    	return list;
+}
+
+int is_list_empty(int *list) {
+	int size;
+
+	size = *(list + 2);
+
+	if(size == 0){
+		return size == 0;
+	}
+	else{
+		return size == 0;
+	}
+
+}
+
+// Print the linked list
+void printList(int *list) {
+
+	int size;
+	int *entry;
+	int data;
+	int *Buffer;
+	int i;
+
+	i = 0;
+
+	Buffer = (int*) malloc(4 * 10);
+
+	size = *(list + 2);
+
+	if(size == 0){
+		print((int*) "The List is empty!");
+		println();
+	}
+
+	else{
+		entry = (int*) *(list);
+
+		while(i < size) {
+			data = *(entry + 2);
+    			print(itoa(data, Buffer, 10, 0, 0));
+			putchar(CHAR_LF);
+			i = i + 1;
+			entry = (int*) *(entry);
+		}
+	}
+}
+
+// Inserts Data at Head of the linked list
+void list_push_front(int *list, int data) {
+	int *newEntry;
+    	int *head;
+    	int size;
+
+    	head = (int*) *list;
+    	size = *(list + 2);
+
+    	newEntry = (int*)malloc(3 * 4);
+
+    	// Init NEWENTRY
+	*newEntry = (int) head;
+
+    	// A new entry at HEAD doesn't have a previous element
+	*(newEntry + 1) = (int) 0;
+
+	// Setting the Data for the Entry
+	*(newEntry + 2) = (int) data;
+
+	// Set head to the newest entry
+	*list = (int) newEntry;
+
+    	// If list was empty then HEAD = TAIL
+    	if(is_list_empty(list)){
+		*(list + 1) = (int) newEntry;
+	}
+    	else{
+		*(newEntry + 1) = (int) newEntry;
+	}
+
+	// Increase size by one
+	*(list + 2) = *(list + 2) + 1;
+}
+
+// Deleting Data at Tail of the linked list
+int *list_pop_back(int *list) {
+    	int *tail;
+    	int *prev;
+    	int size;
+
+    	if(is_list_empty(list)){
+		print((int*) "The List is already empty!");
+		println();
+		return (int*) 0;
+	}
+
+    	tail = (int*) *(list + 1);
+    	prev = (int*) *(tail + 1);
+
+    	// Set new tail to PREV
+	*(list + 1) = (int)prev;
+    	// Reduce size by one
+    	*(list + 2) = *(list + 2) - 1;
+
+    return tail;
+}
+
+int *list_get_entry_at(int *list, int index) {
+    int i;
+    int size;
+    int *head;
+    int *tail;
+
+    size = *(list + 2);
+
+    head = (int*) *list;
+    i = 0;
+    while(i < size) {
+        if(i == index)
+            return head;
+        head = (int*) *head;
+        i = i + 1;
     }
+
+    return (int*)0;
+}
+
+// Sort the list with Bubble Sort
+int* sort_list(int *list) {
+
+	int size;
+	int i;
+	int *entryX;
+	int *entryY;
+	int dataX;
+	int dataY;
+
+	size = *(list + 2);
+
+
+	if(size == 0){
+		print((int*) "List is empty");
+        	println();
+	}
+	else{
+		while(size > 1){
+			i = 0;
+			while(i < size-1) {
+				entryX = list_get_entry_at(list, i);
+				entryY = list_get_entry_at(list, i + 1);
+				dataX = *(entryX + 2);
+				dataY = *(entryY + 2);
+
+				if(dataX < dataY) {
+		        		*(entryX + 2) = dataY;
+		       			*(entryY + 2) = dataX;
+				}
+				i = i + 1;
+			}
+			size = size - 1;
+		}
+	}
+	return list;
+}
+
+//Testing for Assignment 0
+int testList() {
+
+	int *test_list;
+
+	// Initialize the Linked List
+	test_list = init_list();
+
+	// Inserting 9 at the head
+	list_push_front(test_list, 9);
+	// Inserting 7 at the head
+	list_push_front(test_list, 7);
+	// Inserting 8 at the head
+	list_push_front(test_list, 8);
+	// Inserting 2 at the head
+	list_push_front(test_list, 2);
+	// Inserting 4 at the head
+	list_push_front(test_list, 4);
+	// Inserting 1 at the head
+	list_push_front(test_list, 1);
+	// Inserting 5 at the head
+	list_push_front(test_list, 5);
+	// Inserting 3 at the head
+	list_push_front(test_list, 3);
+
+	// head -> [3,5,1,4,2,8,7,9]-> tail
+	print((int*) "List after Inserting");
+	println();
+	print((int*) "HEAD");
+	println();
+	printList(test_list);
+	print((int*) "TAIL");
+	println();
+
+	// Delete the first tail-element (9)
+	*(test_list + 1) = (int) list_pop_back(test_list);
+	// Delete the first tail-element (7)
+	*(test_list + 1) = (int) list_pop_back(test_list);
+	// Delete the first tail-element (8)
+	*(test_list + 1) = (int) list_pop_back(test_list);
+	// head -> [3,5,1,4,2] -> tail
+	print((int*) "List after Deleting");
+	println();
+	print((int*) "HEAD");
+	println();
+	printList(test_list);
+	print((int*) "TAIL");
+	println();
+
+	// Sorting the list
+	test_list = sort_list(test_list);
+	// head -> [5,4,3,2,1] -> tail
+	print((int*) "List after Sorting");
+	println();
+	print((int*) "HEAD");
+	println();
+	printList(test_list);
+	print((int*) "TAIL");
+	println();
+
 }
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -3738,7 +4082,7 @@ void load() {
 // -----------------------------------------------------------------
 
 void emitExit() {
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "exit", binaryLength, FUNCTION, INT_T, 0);
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "exit", 0, FUNCTION, INT_T, 0, binaryLength);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
@@ -3773,7 +4117,7 @@ void syscall_exit() {
 }
 
 void emitRead() {
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "read", binaryLength, FUNCTION, INT_T, 0);
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "read", 0, FUNCTION, INT_T, 0, binaryLength);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
 
@@ -3823,7 +4167,7 @@ void syscall_read() {
 }
 
 void emitWrite() {
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "write", binaryLength, FUNCTION, INT_T, 0);
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "write", 0, FUNCTION, INT_T, 0, binaryLength);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
 
@@ -3871,7 +4215,7 @@ void syscall_write() {
 }
 
 void emitOpen() {
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "open", binaryLength, FUNCTION, INT_T, 0);
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "open", 0, FUNCTION, INT_T, 0, binaryLength);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
 
@@ -3922,7 +4266,7 @@ void syscall_open() {
 }
 
 void emitMalloc() {
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "malloc", binaryLength, FUNCTION, INTSTAR_T, 0);
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "malloc", 0, FUNCTION, INTSTAR_T, 0, binaryLength);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
@@ -3965,7 +4309,7 @@ void syscall_malloc() {
 }
 
 void emitPutchar() {
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "putchar", binaryLength, FUNCTION, INT_T, 0);
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "putchar", 0, FUNCTION, INT_T, 0, binaryLength);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
 
@@ -3984,8 +4328,8 @@ void emitPutchar() {
 
 void emitSchedYield() {
 
-    // create Symbol Table Entroy for yield
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "sched_yield", binaryLength, FUNCTION, INT_T, 0);
+    // create Symbol Table Entry for yield
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "sched_yield", 0, FUNCTION, INT_T, 0, binaryLength);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
@@ -3999,19 +4343,35 @@ void emitSchedYield() {
 
 void syscall_sched_yield(){
 
-    schedule_and_switch();
+    	int size;
+	int *entry;
+	size = *(ready_queue + 2);
+	//if the ready queue is empty, the running process can continue
+	if(size == 0){
+		print((int*) "empty---------");
+		println();
+		return;
+	}
+	//else the processes have to be switched so that the next process from the ready queue is allowed to run
+	else{
+		// 1. Saving the states of the running process in the ready queue
+		list_push_front(ready_queue, (int) running_process);
 
-    if (debug_sched_yield) {
-        print(binaryName);
-	println();
-        print((int*) "sched_yield");
-        println();
-    }
+		// 2. Switching the running process and get the first of the ready queue
+		entry = (int*) list_get_entry_at(ready_queue, size);
+		running_process = (int*) *(entry + 2);
+
+		// 3. Delete the first Process from ready queue because it is the running process
+		*(ready_queue + 1)  = (int) list_pop_back(ready_queue);
+
+	}
 
 }
 
 void emitMlock() {
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "mlock", binaryLength, FUNCTION, INT_T, 0);
+
+    // create Symbol Table Entry for mlock
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "mlock", 0, FUNCTION, INT_T, 0, binaryLength);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
@@ -4026,26 +4386,27 @@ void emitMlock() {
 
 void syscall_mlock() {
 	*lock = *(running_process);
-	if(prints){
-		println();
-		println();
-		println();
-		println();
-		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-		println();
-		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-		println();
-		print((int*) "Running User Process get's the lock");
-		println();
-		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-		println();
-		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-		println();
-	}
+
+	println();
+	println();
+	println();
+	println();
+	print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+	println();
+	print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+	println();
+	print((int*) "Running User Process get's the lock");
+	println();
+	print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+	println();
+	print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+	println();
+
 }
 
 void emitMunlock() {
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "munlock", binaryLength, FUNCTION, INT_T, 0);
+    // create Symbol Table Entry for munlock
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "munlock", 0, FUNCTION, INT_T, 0, binaryLength);
 
     // doesn't have any arguments
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
@@ -4063,19 +4424,22 @@ void syscall_munlock() {
 	int size;
 	int new_size;
 	int i;
-	int* node;
+	int* entry;
 	int* process;
 
 	i = 0;
-	size = sizeOfList(blocked_queue);
+	size = *(blocked_queue + 2);
+
 	*lock = 0;
 
 	while(i < size){
-		new_size = sizeOfList(blocked_queue) - 1;
-		node = (int*) getNodeFromList(blocked_queue, new_size);
-		process = (int*) *(node + 1);
-		blocked_queue = deleteFirstNodeFromList(blocked_queue);
-		ready_queue = addToList(ready_queue,(int) process);
+		new_size = *(blocked_queue + 2) - 1;
+
+		entry = (int*) list_get_entry_at(blocked_queue, new_size);
+		process = (int*) *(entry + 2);
+		*(blocked_queue + 1) = (int) list_pop_back(blocked_queue);
+		list_push_front(ready_queue, (int) process);
+
 		i = i + 1;
 	}
 }
@@ -4085,7 +4449,8 @@ void syscall_munlock() {
 // -------------------------------------------------------------------
 
 void emitGetpid() {
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "getpid", binaryLength, FUNCTION, INT_T, 0);
+    // create Symbol Table Entry for getpid
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "getpid", 0, FUNCTION, INT_T, 0, binaryLength);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
@@ -4098,27 +4463,27 @@ void emitGetpid() {
     emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
-// FAssignment 6
+// Assignment 6
 // syscall for create_context
 // create_context returns a unique ID to identify the new context
 // in our case it sets the variable running_process_id which stands for the ID of the next running process
 void syscall_getpid() {
 
-	int* node;
+	int* entry;
 	int* process;
 	int size;
 
-	size = sizeOfList(ready_queue)-1;
+	size = *(ready_queue + 2) - 1;
 
-	node = (int*) getNodeFromList(ready_queue, size);
-	process = (int*) *(node + 1);
+	entry = (int*) list_get_entry_at(ready_queue, size);
+	process = (int*) *(entry + 2);
 	running_process_id = *(process);
 }
 
 void emitSwitch() {
 
-    // create Symbol Table Entry for swapoff
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "switch", binaryLength, FUNCTION, INT_T, 0);
+    // create Symbol Table Entry for switch
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "switch", 0, FUNCTION, INT_T, 0, binaryLength);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
@@ -4139,75 +4504,97 @@ void syscall_switch() {
 
 	if(*(running_process) == 0){
 
-		prev_node = getNodeByIdFromProcessList(running_process_id);
-		prev_process = (int*) (prev_node);
+		prev_entry = getNodeByIdFromProcessList(running_process_id);
+		prev_process = (int*) (prev_entry);
 
 		syscall_getpid();
 
-		next_node = getNodeByIdFromProcessList(running_process_id);
-		next_process = (int*) (next_node);
+		next_entry = getNodeByIdFromProcessList(running_process_id);
+		next_process = (int*) (next_entry);
 
 		*(running_process + 1) = *(running_process + 1) + 1;
 
 		running_process = next_process ;
 
-		ready_queue = deleteFirstNodeFromList(ready_queue);
-		if(prints){
-			println();
-			println();
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "Running Kernel Process and Switch to User Process");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			println();
-			println();
-		}
+		*(ready_queue + 1) = (int) list_pop_back(ready_queue);
+
+		println();
+		println();
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "Running Kernel Process and Switch to User Process");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		println();
+		println();
 	}
 	else{
-		prev_node = getNodeByIdFromProcessList(running_process_id);
-		prev_process = (int*) (prev_node);
 
-		next_node = getNodeByIdFromProcessList(0);
-		next_process = (int*) (next_node);
+
+		prev_entry = getNodeByIdFromProcessList(running_process_id);
+		prev_process = (int*) (prev_entry);
+
+		next_entry = getNodeByIdFromProcessList(0);
+		next_process = (int*) (next_entry);
 
 		running_process = next_process;
 
-		ready_queue = addToList(ready_queue, (int) prev_process);
-		if(prints){
-			println();
-			println();
-			println();
-			println();
-			print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-			println();
-			print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-			println();
-			print((int*) "Running User Process and Switch to Kernel Process");
-			println();
-			print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-			println();
-			print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-			println();
-		}
+		list_push_front(ready_queue, (int) prev_process);
 
+		println();
+		println();
+		println();
+		println();
+		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+		println();
+		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+		println();
+		print((int*) "Running User Process and Switch to Kernel Process");
+		println();
+		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+		println();
+		print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+		println();
 	}
+}
+
+void emitTrap() {
+
+    // create Symbol Table Entry for switch
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "trap", 0, FUNCTION, INT_T, 0, binaryLength);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A1, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_A0, 0);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_TRAP);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+
+}
+
+void syscall_trap() {
+
+	trap_flag = 1;
+
+	syscall_switch();
+
 }
 
 void emitMapPageInContext() {
 
-    // create Symbol Table Entry for swapoff
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "map", binaryLength, FUNCTION, INT_T, 0);
+    // create Symbol Table Entry for map
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "map", 0, FUNCTION, INT_T, 0, binaryLength);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
@@ -4234,7 +4621,7 @@ void syscall_map_page_in_context(int pagenumber) {
 
 	table_entry = create_page_table_entry(pagenumber, physicaladdress);
 
-	pagetable = addToList(pagetable, (int) table_entry);
+	list_push_front(pagetable, (int) table_entry);
 
 	*(running_process + 6) = (int) pagetable;
 
@@ -4243,7 +4630,7 @@ void syscall_map_page_in_context(int pagenumber) {
 void emitFlushPageInContext() {
 
     // create Symbol Table Entry for swapoff
-    createSymbolTableEntry(GLOBAL_TABLE, (int*) "map", binaryLength, FUNCTION, INT_T, 0);
+    createSymbolTableEntry(GLOBAL_TABLE, (int*) "unmap", 0, FUNCTION, INT_T, 0, binaryLength);
 
     emitIFormat(OP_ADDIU, REG_ZR, REG_A3, 0);
     emitIFormat(OP_ADDIU, REG_ZR, REG_A2, 0);
@@ -4267,9 +4654,24 @@ void syscall_flush_page_in_context() {
 // -----------------------------------------------------------------
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 
+// ------------------------ DATA STRUCTURE FOR A PAGE TABLE ENTRY -----------------------
+// Creating a new Page table entry with physical Address and virtual Address.
+int* create_page_table_entry(int pagenumber , int* physical_address){
+	//initialization of the process
+	int* page_table_entry;
+	//memory allocation
+	page_table_entry = malloc (2 * 4);
+
+	//initalization of the arguments of the process
+	*page_table_entry = pagenumber;
+	*(page_table_entry+1) = (int) physical_address;
+
+	return page_table_entry;
+}
+
 int* getNodeByIdFromProcessList(int id){
 
-	int* node_i;
+	int* entry_i;
 	int* process_i;
 	int i;
 	int j;
@@ -4280,8 +4682,9 @@ int* getNodeByIdFromProcessList(int id){
 	Buffer = (int*)malloc(4*10);
 
 	while(i < all_processes) {
-		node_i = (int*) getNodeFromList(process_list, i);
-		process_i = (int*) *(node_i + 1);
+
+		entry_i = (int*) list_get_entry_at(process_list, i);
+		process_i = (int*) *(entry_i + 2);
 
 		j = (int) *(process_i);
 
@@ -4296,7 +4699,7 @@ int* getNodeByIdFromProcessList(int id){
 }
 
 void create_process_List(int number){
-	int *node;
+	int *entry;
 	int *process;
 	int pid_process_list;
 	int pid_ready_queue;
@@ -4304,20 +4707,106 @@ void create_process_List(int number){
 
 	pid_process_list = 0;
 	pid_ready_queue = number_of_processes - 1;
-	process_list = initializeList(process_list);
+	process_list = init_list();
 
 	while(pid_process_list < number){
 		if(pid_process_list == 0){
-			process_list = addToList(process_list, (int) kernel_process);
+			list_push_front(process_list, (int) kernel_process);
 			pid_process_list = pid_process_list + 1;
 		}
 		else{
-			node = (int*) getNodeFromList(ready_queue, pid_ready_queue);
-			process = (int*) *(node+1);
-			process_list = addToList(process_list, (int) process);
+			entry = (int*) list_get_entry_at(ready_queue, pid_ready_queue);
+			process = (int*) *(entry + 2);
+			list_push_front(process_list, (int) process);
 			pid_process_list = pid_process_list + 1;
 			pid_ready_queue = pid_ready_queue - 1;
 		}
+	}
+}
+
+void printPageTable(){
+
+	int* pageTable;
+	int* Entry;
+	int* Entrydata;
+	int size;
+	int* Buffer;
+	int i;
+	int pagenumber;
+	int physicaladdress;
+
+	i = 0;
+
+	Buffer = (int*)malloc(4*10);
+
+	pageTable = (int*) *(running_process + 6);
+
+	size = *(pageTable + 2);
+
+	println();
+	print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+	println();
+	print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+	println();
+	print((int*) "Size of the Pagetable");
+	println();
+	print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+	println();
+	print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+	println();
+	print(itoa(size, Buffer, 10, 0, 0));
+	println();
+
+	while(i<size){
+		Entry = (int*) list_get_entry_at(pageTable, i);
+		Entrydata = (int*) *(Entry + 2);
+		pagenumber = *(Entrydata);
+		physicaladdress = *(Entrydata + 1);
+
+		println();
+		print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+		println();
+		print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+		println();
+		print(itoa(i, Buffer, 10, 0, 0));
+		print((int*) ". Pagetable Entry");
+		println();
+		print((int*) "Pagenumber");
+		println();
+		print(itoa(pagenumber, Buffer, 10, 0, 0));
+		println();
+		print((int*) "Physical Address");
+		println();
+		print(itoa(physicaladdress, Buffer, 10, 0, 0));
+		println();
+		print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+		println();
+		print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
+		println();
+
+		i = i + 1;
+	}
+}
+
+// partition the emulated memory (like physical memory on a real machine) into 4KB
+// frames
+// ------------------------ Frame Table ----------------------------------------
+void create_frame_table(){
+
+	int i;
+	int* address;
+	int number_of_frames;
+
+	i = 0;
+
+	number_of_frames = memorySize / FRAME_SIZE;
+
+	frame_table = init_list();
+
+	while(i < number_of_frames){
+		address = (int*) (i * FRAME_SIZE);
+		list_push_front(frame_table, (int) address);
+		i = i + 1;
 	}
 }
 
@@ -4328,18 +4817,16 @@ void create_lock(){
 
 	lock = malloc(2 * 4);
 	*lock = 0;
-	*(lock+1) = *blocked_queue;
+	*(lock + 1) = *blocked_queue;
 }
-
 
 // Sort the list with Bubble Sort
 int* sortListByPC(int *list) {
 
 	int size;
 	int i;
-	int *listNodeX;
-	int *listNodeY;
-	int *tempNode;
+	int *listEntryX;
+	int *listEntryY;
 	int *listProcessX;
 	int *listProcessY;
 	int listProcessPCX;
@@ -4347,8 +4834,7 @@ int* sortListByPC(int *list) {
 	int* Buffer;
 
 	Buffer = (int*)malloc(4*10);
-	size = sizeOfList(list);
-
+	size = *(list + 2);
 
 	if(size == 0){
 		print((int*) "List is empty");
@@ -4361,12 +4847,16 @@ int* sortListByPC(int *list) {
         		println();
 			i = 0;
 			while(i < size-1) {
-				listNodeX = (int*) getNodeFromList(list, i);
-				listNodeY = (int*) getNodeFromList(list, i+1);
-				listProcessX = (int*) *(listNodeX + 1);
-				listProcessY = (int*) *(listNodeY + 1);
-				listProcessPCX = *(listProcessX+1);
-				listProcessPCY = *(listProcessY+1);
+
+
+				listEntryX = (int*) list_get_entry_at(list, i);
+				listEntryY = (int*) list_get_entry_at(list, i+1);
+
+				listProcessX = (int*) *(listEntryX + 2);
+				listProcessY = (int*) *(listEntryY + 2);
+
+				listProcessPCX = *(listProcessX + 1);
+				listProcessPCY = *(listProcessY + 1);
 
 				println();
 				print(itoa(listProcessPCX, Buffer, 10, 0, 0));
@@ -4379,8 +4869,8 @@ int* sortListByPC(int *list) {
 				if(listProcessPCX < listProcessPCY) {
 					print((int*) "change");
 		        		println();
-					*(listNodeX + 1) = (int) listProcessY;
-					*(listNodeY + 1) = (int) listProcessX;
+					*(listEntryX + 2) = (int) listProcessY;
+					*(listEntryY + 2) = (int) listProcessX;
 				}
 				else{
 					print((int*) "no change");
@@ -4392,20 +4882,18 @@ int* sortListByPC(int *list) {
 		}
 	}
 
-		if(prints){
-			print((int*) "____________________________________________________");
-		 	println();
-		 	print((int*) "This is the Ready-Queue after sorting");
-		 	println();
-			print((int*) "____________________________________________________");
-			println();
-		 	print((int*) "PIDs");
-		 	println();
-		 	printListPID(ready_queue);
-		 	print((int*) "PCs");
-		 	println();
-		 	printListPC(ready_queue);
-		}
+	print((int*) "____________________________________________________");
+ 	println();
+ 	print((int*) "This is the Ready-Queue after sorting");
+ 	println();
+	print((int*) "____________________________________________________");
+	println();
+ 	print((int*) "PIDs");
+ 	println();
+ 	printListPID(ready_queue);
+ 	print((int*) "PCs");
+ 	println();
+ 	printListPC(ready_queue);
 
 	return list;
 }
@@ -4415,74 +4903,72 @@ void runOS(int argc, int* argv){
 	int* Buffer;
 	Buffer = (int*)malloc(4*10);
 
-
 	while(1){
-		if(prints){
-			println();
-			println();
-			println();
-			println();
-			println();
-			print((int*) "BEFORE RUNNING KERNEL");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			println();
-			print((int*) "This is the Process-List before running kernel");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "PIDs");
-			println();
-			printListPID(process_list);
-			print((int*) "PCs");
-			println();
-			printListPC(process_list);
-			print((int*) "____________________________________________________");
-		 	println();
-		 	print((int*) "This is the Ready-Queue before running Kernel");
-		 	println();
-			print((int*) "____________________________________________________");
-			println();
-		 	print((int*) "PIDs");
-		 	println();
-		 	printListPID(ready_queue);
-		 	print((int*) "PCs");
-		 	println();
-		 	printListPC(ready_queue);
-			print((int*) "____________________________________________________");
-		 	println();
-		 	print((int*) "This is the Blocked-Queue before running Kernel");
-		 	println();
-			print((int*) "____________________________________________________");
-			println();
-		 	print((int*) "PIDs");
-		 	println();
-		 	printListPID(blocked_queue);
-		 	print((int*) "PCs");
-		 	println();
-		 	printListPC(blocked_queue);
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "This is the Running Process before running Kernel");
-		 	println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "PID");
-			println();
-			print(itoa(*(running_process), Buffer, 10, 0, 0));
-			println();
-			print((int*) "PC");
-			println();
-			print(itoa(*(running_process+1), Buffer, 10, 0, 0));
-			println();
-		}
+
+		println();
+		println();
+		println();
+		println();
+		println();
+		print((int*) "BEFORE RUNNING KERNEL");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		println();
+		print((int*) "This is the Process-List before running kernel");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "PIDs");
+		println();
+		printListPID(process_list);
+		print((int*) "PCs");
+		println();
+		printListPC(process_list);
+		print((int*) "____________________________________________________");
+	 	println();
+	 	print((int*) "This is the Ready-Queue before running Kernel");
+	 	println();
+		print((int*) "____________________________________________________");
+		println();
+	 	print((int*) "PIDs");
+	 	println();
+	 	printListPID(ready_queue);
+	 	print((int*) "PCs");
+	 	println();
+	 	printListPC(ready_queue);
+		print((int*) "____________________________________________________");
+	 	println();
+	 	print((int*) "This is the Blocked-Queue before running Kernel");
+	 	println();
+		print((int*) "____________________________________________________");
+		println();
+	 	print((int*) "PIDs");
+	 	println();
+	 	printListPID(blocked_queue);
+	 	print((int*) "PCs");
+	 	println();
+	 	printListPC(blocked_queue);
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "This is the Running Process before running Kernel");
+	 	println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "PID");
+		println();
+		print(itoa(*(running_process), Buffer, 10, 0, 0));
+		println();
+		print((int*) "PC");
+		println();
+		print(itoa(*(running_process+1), Buffer, 10, 0, 0));
+		println();
 
 		syscall_switch();
 
@@ -4502,81 +4988,79 @@ void runOS(int argc, int* argv){
 			max_frames = max_frames - 1;
 		}
 
-		if(prints){
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			println();
-			print((int*) "This is the Process-List after running kernel");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			println();
-			print((int*) "PIDs");
-			println();
-			printListPID(process_list);
-			print((int*) "PCs");
-			println();
-			printListPC(process_list);
-			print((int*) "____________________________________________________");
-			println();
-			println();
-		 	print((int*) "This is the Ready-Queue after running kernel");
-		 	println();
-			print((int*) "____________________________________________________");
-			println();
-			println();
-		 	print((int*) "PIDs");
-		 	println();
-		 	printListPID(ready_queue);
-		 	print((int*) "PCs");
-		 	println();
-		 	printListPC(ready_queue);
-			print((int*) "____________________________________________________");
-			println();
-			println();
-			print((int*) "This is the Blocked-Queue after running kernel");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			println();
-			print((int*) "PIDs");
-			println();
-			printListPID(blocked_queue);
-			print((int*) "PCs");
-			println();
-			printListPC(blocked_queue);
-			print((int*) "____________________________________________________");
-			println();
-			println();
-			print((int*) "This is the Running-Process after running kernel");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			println();
-			print((int*) "PID");
-			println();
-			print(itoa(*(running_process), Buffer, 10, 0, 0));
-			println();
-			print((int*) "PC");
-			println();
-			print(itoa(*(running_process+1), Buffer, 10, 0, 0));
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			println();
-			print((int*) "This is the Pagetable of the Running-Process");
-			println();
-			print((int*) "____________________________________________________");
-			printPageTable();
-		}
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		println();
+		print((int*) "This is the Process-List after running kernel");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		println();
+		print((int*) "PIDs");
+		println();
+		printListPID(process_list);
+		print((int*) "PCs");
+		println();
+		printListPC(process_list);
+		print((int*) "____________________________________________________");
+		println();
+		println();
+	 	print((int*) "This is the Ready-Queue after running kernel");
+	 	println();
+		print((int*) "____________________________________________________");
+		println();
+		println();
+	 	print((int*) "PIDs");
+	 	println();
+	 	printListPID(ready_queue);
+	 	print((int*) "PCs");
+	 	println();
+	 	printListPC(ready_queue);
+		print((int*) "____________________________________________________");
+		println();
+		println();
+		print((int*) "This is the Blocked-Queue after running kernel");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		println();
+		print((int*) "PIDs");
+		println();
+		printListPID(blocked_queue);
+		print((int*) "PCs");
+		println();
+		printListPC(blocked_queue);
+		print((int*) "____________________________________________________");
+		println();
+		println();
+		print((int*) "This is the Running-Process after running kernel");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		println();
+		print((int*) "PID");
+		println();
+		print(itoa(*(running_process), Buffer, 10, 0, 0));
+		println();
+		print((int*) "PC");
+		println();
+		print(itoa(*(running_process+1), Buffer, 10, 0, 0));
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		println();
+		print((int*) "This is the Pagetable of the Running-Process");
+		println();
+		print((int*) "____________________________________________________");
+		printPageTable();
 
 		if(debug_locking == 1){
 			if(*lock == 0){
@@ -4591,46 +5075,43 @@ void runOS(int argc, int* argv){
 				ready_queue = sortListByPC(ready_queue);
 
 				debug_locking = 0;
-				if(prints){
-					println();
-					println();
-					println();
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-					print((int*) "Unlocking and adding all User Process from the Blocked-Queue to the Ready-Queue");
-					println();
-					print((int*) "and then running the actual User Process");
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-				}
+				println();
+				println();
+				println();
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+				print((int*) "Unlocking and adding all User Process from the Blocked-Queue to the Ready-Queue");
+				println();
+				print((int*) "and then running the actual User Process");
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
 				run(argc, (int*) argv);
 			}
 			else{
-				blocked_queue = addToList(blocked_queue, (int) running_process);
+				list_push_front(blocked_queue, (int) running_process);
 				running_process = kernel_process;
 
-				if(prints){
-					println();
-					println();
-					println();
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-					print((int*) "Running User Process added to Blocked-Queue");
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-				}
+				println();
+				println();
+				println();
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+				print((int*) "Running User Process added to Blocked-Queue");
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+
 				debug_locking = 0;
 			}
 		}
@@ -4644,43 +5125,41 @@ void runOS(int argc, int* argv){
 
 				debug_locking = 0;
 
-				if(prints){
-					println();
-					println();
-					println();
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-					print((int*) "Unlocking and adding all User Process from the Blocked-Queue to the Ready-Queue");
-					println();
-					print((int*) "and then running the actual User Process");
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-				}
+				println();
+				println();
+				println();
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+				print((int*) "Unlocking and adding all User Process from the Blocked-Queue to the Ready-Queue");
+				println();
+				print((int*) "and then running the actual User Process");
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+
 				run(argc, (int*) argv);
 			}
 			else{
-				if(prints){
-					println();
-					println();
-					println();
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-					print((int*) "Running User Process does not need the lock");
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-					print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-					println();
-				}
+				println();
+				println();
+				println();
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+				print((int*) "Running User Process does not need the lock");
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+				print((int*) "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				println();
+
 				debug_locking = 1;
 				run(argc, (int*) argv);
 			}
@@ -4693,9 +5172,8 @@ void kOS(int argc, int* argv) {
 	int *new_reg;
 	int* Buffer;
 
-	if(booting == 1){
+	if(trap_flag == 0){
 
-		booting = 0;
 
 		new_reg = malloc(4*32);
 		Buffer = (int*)malloc(4*10);
@@ -4709,87 +5187,77 @@ void kOS(int argc, int* argv) {
 
 		create_frame_table();
 
-		println();
-		print((int*) "Memory Size");
-		println();
-
-		println();
-		print(itoa(memorySize, Buffer, 10, 0, 0));
-		println();
-
-		create_ready_queue(all_processes, ticks);
+		create_ready_queue(all_processes);
 		create_process_List(all_processes);
-		blocked_queue = initializeList(blocked_queue);
+		blocked_queue = init_list();
 		create_lock();
 
-		if(prints){
-			println();
-			println();
-			println();
-			println();
-			println();
-			print((int*) "BOOTING");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			println();
-			print((int*) "This is the Process-List after Booting");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "PIDs");
-			println();
-			printListPID(process_list);
-			print((int*) "PCs");
-			println();
-			printListPC(process_list);
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "This is the Ready-Queue after Booting");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "PIDs");
-			println();
-			printListPID(ready_queue);
-			print((int*) "PCs");
-			println();
-			printListPC(ready_queue);
+		println();
+		println();
+		println();
+		println();
+		println();
+		print((int*) "BOOTING");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		println();
+		print((int*) "This is the Process-List after Booting");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "PIDs");
+		println();
+		printListPID(process_list);
+		print((int*) "PCs");
+		println();
+		printListPC(process_list);
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "This is the Ready-Queue after Booting");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "PIDs");
+		println();
+		printListPID(ready_queue);
+		print((int*) "PCs");
+		println();
+		printListPC(ready_queue);
 
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "This is the Blocked-Queue after Booting");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "PIDs");
-			println();
-			printListPID(blocked_queue);
-			print((int*) "PCs");
-			println();
-			printListPC(blocked_queue);
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "This is the Blocked-Queue after Booting");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "PIDs");
+		println();
+		printListPID(blocked_queue);
+		print((int*) "PCs");
+		println();
+		printListPC(blocked_queue);
 
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "This is the Running-Process after Booting");
-			println();
-			print((int*) "____________________________________________________");
-			println();
-			print((int*) "PID");
-			println();
-			print(itoa(*(running_process), Buffer, 10, 0, 0));
-			println();
-			print((int*) "PC");
-			println();
-			print(itoa(*(running_process+1), Buffer, 10, 0, 0));
-			println();
-		}
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "This is the Running-Process after Booting");
+		println();
+		print((int*) "____________________________________________________");
+		println();
+		print((int*) "PID");
+		println();
+		print(itoa(*(running_process), Buffer, 10, 0, 0));
+		println();
+		print((int*) "PC");
+		println();
+		print(itoa(*(running_process+1), Buffer, 10, 0, 0));
+		println();
 
 		runOS(argc, (int*) argv);
 	}
@@ -4859,7 +5327,17 @@ void fct_syscall() {
 	        syscall_sched_yield();
     	} else if (*(registers+REG_V0) == SYSCALL_SWITCH) {
 	        syscall_switch();
-    	} else {
+    	} else if (*(registers+REG_V0) == SYSCALL_TRAP) {
+	        syscall_trap();
+    	} else if (*(registers+REG_V0) == SYSCALL_MLOCK) {
+	        syscall_mlock();
+	} else if (*(registers+REG_V0) == SYSCALL_MUNLOCK) {
+	        syscall_munlock();
+	} else if (*(registers+REG_V0) == SYSCALL_GETPID) {
+	        syscall_getpid();
+	} else if (*(registers+REG_V0) == SYSCALL_UNMAP) {
+	        syscall_flush_page_in_context();
+	} else {
             exception_handler(EXCEPTION_UNKNOWNSYSCALL);
         }
 
@@ -5596,23 +6074,30 @@ void execute() {
 
 // Print the value of the Process IDs
 void printListPID(int *list) {
-	int counter;
-	int number;
+	int size;
 	int *Buffer;
-	int *node;
+	int *entry;
 	int *process;
+	int number;
 
-	Buffer = (int*)malloc(4*10);
+	Buffer = (int*)malloc(4 * 10);
+	size = *(list + 2) - 1;
 
-	counter = sizeOfList(list)-1;
+	if(size < 0){
 
-	while(counter >= 0) {
-		node = (int*) getNodeFromList(list, counter);
-		process = (int*) *(node+1);
-		number = *(process);
-    		print(itoa(number, Buffer, 10, 0, 0));
-		putchar(CHAR_LF);
-		counter = counter - 1;
+		    print((int*) "Keine Prozesse in der Liste!");
+		    println();
+
+	}
+	else{
+		while(size >= 0) {
+			entry = (int*) list_get_entry_at(list, size);
+			process = (int*) *(entry + 2);
+			number = *(process);
+	    		print(itoa(number, Buffer, 10, 0, 0));
+			putchar(CHAR_LF);
+			size = size - 1;
+		}
 	}
 
 }
@@ -5620,26 +6105,103 @@ void printListPID(int *list) {
 // Print the value of the Program counters
 void printListPC(int *list) {
 
-	int counter;
-	int number;
+	int size;
 	int *Buffer;
-	int *node;
+	int *entry;
 	int *process;
+	int number;
 
-	counter = sizeOfList(list)-1;
+	Buffer = (int*)malloc(4*10);
+	size = *(list + 2) - 1;
 
-	while(counter >= 0) {
-		node = (int*) getNodeFromList(list, counter);
-		process = (int*) *(node+1);
-		number = *(process+1);
-		Buffer = (int*)malloc(4*10);
-    		print(itoa(number, Buffer, 10, 0, 0));
-		putchar(CHAR_LF);
-		counter = counter - 1;
+	if(size < 0){
+
+		    print((int*) "Keine Prozesse in der Liste!");
+		    println();
+
+	}
+	else{
+		while(size >= 0) {
+			entry = (int*) list_get_entry_at(list, size);
+			process = (int*) *(entry + 2);
+			number = *(process + 1);
+			print(itoa(number, Buffer, 10, 0, 0));
+			putchar(CHAR_LF);
+			size = size - 1;
+		}
 	}
 }
 
+// ------------------------ DATA STRUCTURE FOR A PROCESS -----------------------
+// Creating a new Process with Process ID (new_pid), Programm Counter (new_pc),
+// Address to the Register (new_reg), Address to the Memory (new_mem),
+// hi register for multiplication/division (new_reg_hi) and
+// lo register for multiplication/division (new_reg_lo) and
+int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo){
+	//initialization of the process
+	int* process;
+	int* start;
+	int* page_table;
+	int* virtual_memory;
+	int* Buffer;
 
+	Buffer = (int*)malloc(4*10);
+
+	if(new_pid == 0){
+
+		process = malloc (6 * 4);
+
+		//initalization of the arugments of the process
+		*process = new_pid;
+		*(process+1) = 0;
+		*(process+2) = (int) new_reg;
+		*(process+3) = * memory;
+		*(process+4) = new_reg_hi;
+		*(process+5) = new_reg_lo;
+
+		return process;
+	}
+	else{
+
+		process = malloc (7 * 4);
+    		virtual_memory = malloc(virtual_memory_size);
+
+		page_table = init_list();
+
+		//initalization of the argments of the process
+		*process = new_pid;
+		*(process+1) = 0;
+		*(process+2) = (int) new_reg;
+		//each process gets a 4MB virtual address space.
+		*(process+3) = * virtual_memory;
+		*(process+4) = new_reg_hi;
+		*(process+5) = new_reg_lo;
+		*(process+6) = (int) page_table;
+
+		return process;
+	}
+}
+
+// ------------------------ Assignment 1: READY QUEUE ----------------------------------------
+// Creating a Ready queue with n processes
+void create_ready_queue(int n){
+	int *new_process;
+	int pid;
+	int *new_reg;
+
+	pid = 1;
+	ready_queue = init_list();
+
+	running_process = create_process(0, new_reg, reg_hi, reg_lo);
+	running_process_id = 0;
+
+	while(pid < n){
+		new_reg = malloc(4*32);
+		new_process = create_process(pid, new_reg, reg_hi, reg_lo);
+		list_push_front(ready_queue, (int) new_process);
+		pid = pid + 1;
+	}
+}
 
 void run(int argc, int* argv) {
 
@@ -5653,7 +6215,7 @@ void run(int argc, int* argv) {
 	instr = instr + 1;
 	*(running_process + 1) = *(running_process + 1) + 1;
 
-	if(instr == numb_of_instr){
+	if(instr == ticks){
 		halt = 1;
 	}
     }
@@ -5661,7 +6223,8 @@ void run(int argc, int* argv) {
     interpret = 0;
     debug     = 0;
 
-    syscall_switch();
+    syscall_trap();
+
     kOS(argc, (int*) argv);
 }
 
@@ -5876,409 +6439,6 @@ void disassemble(int argc, int* argv) {
     outputFD   = 1;
 }
 
-//// Assignment 0: Basic data structures ////
-//Review linked lists and implement a simple program using a singly linked list in C*. The minimal requirements are as follows:
-//
-//must be implemented in C*
-//must compile with selfie
-//must run on selfie
-//the list must be dynamically allocated
-//every node must be dynamically allocated
-//inserting nodes to the list and removing nodes from the list
-//list iteration
-//Bonus: sort the list. Any way you like
-//Deadline: Oct 15, end of day
-
-// Initialization of the linked list (Creating the header with data -1)
-// The header cannot be deleted!!
-int* initializeList(int *list) {
-	int *header;
-	int data;
-
-	header = malloc(4*2);
-	*header = 0;
-	return header;
-}
-
-// Add a node to the linked list at the bottom
-int* addToList(int *list, int data) {
-
-	int *newNode;
-	newNode = malloc(4*2);
-	*newNode = (int) list;
-	*(newNode+1) = data;
-	return newNode;
-}
-
-// Iterate through the linked list and get the nth node of the list
-int getNodeFromList(int *list, int nthNode) {
-
-	while(nthNode > 0) {
-		list = (int*) *list;
-		nthNode = nthNode - 1;
-	}
-
-	return (int) list;
-}
-
-// Get the size of the linked list
-int sizeOfList(int *list) {
-
-	int count;
-	count = 0;
-
-	while(*list != 0) {
-		list = (int*) *list;
-		count = count + 1;
-	}
-	return count;
-}
-
-// Delete a node from the linked list from the top
-int* deleteFirstNodeFromList(int *list) {
-
-	int *prev;
-	int *next;
-	int size;
-	prev = malloc(2*4);
-	next = malloc(2*4);
-	*prev = 0;
-	*next = 0;
-	size = sizeOfList(list);
-
-	if(size == 1){
-		list = initializeList(list);
-	}
-	else{
-
-		prev = (int*) getNodeFromList(list, size-2);
-		next = (int*) getNodeFromList(list, size);
-		*prev = (int) next;
-	}
-
-	return list;
-}
-
-// Sort the list with Bubble Sort
-int* sortList(int *list) {
-
-	int size;
-	int i;
-	int *listitemX;
-	int *listitemY;
-	int x;
-	int y;
-
-	size = sizeOfList(list);
-
-
-	if(size == 0){
-		print((int*) "List is empty");
-        	println();
-	}
-	else{
-		while(size > 1){
-			i = 0;
-			while(i < size-1) {
-				listitemX = (int*) getNodeFromList(list, i);
-				listitemY = (int*) getNodeFromList(list, i+1);
-				x = *(listitemX+1);
-				y = *(listitemY+1);
-
-				if(x < y) {
-		        		*(listitemX + 1) = y;
-		       			*(listitemY + 1) = x;
-				}
-				i = i + 1;
-			}
-			size = size - 1;
-		}
-	}
-	return list;
-}
-
-// Print the linked list
-void printList(int *list) {
-
-	int counter;
-	int *nodeNumber;
-	int number;
-	int *Buffer;
-
-	counter = sizeOfList(list)-1;
-
-	while(counter >= 0) {
-		nodeNumber = (int*) getNodeFromList(list, counter);
-		number = *(nodeNumber+1);
-		Buffer = (int*)malloc(4*10);
-    		print(itoa(number, Buffer, 10, 0, 0));
-		putchar(CHAR_LF);
-		counter = counter - 1;
-	}
-}
-
-//Testing for Assignment 00
-int testList() {
-
-	int *list;
-	// Create new linked list (FIFO Linked List):
-	// top -> [9,7,8,2,4,1,5,3] -> bottom
-	print((int*) "Insert into list");
-	println();
-	list = initializeList(list);
-	list = addToList(list, 9);
- 	list = addToList(list, 7);
-	list = addToList(list, 8);
-	list = addToList(list, 2);
-	list = addToList(list, 4);
-	list = addToList(list, 1);
-	list = addToList(list, 5);
-	list = addToList(list, 3);
-	printList(list);
-
-	// Delete the first node (FIFO Linked List):
-	// top -> [2,4,1,5,3] -> bottom
-	print((int*) "Delete first Node");
-	println();
-	list = deleteFirstNodeFromList(list); //9
-	list = deleteFirstNodeFromList(list); //7
-	list = deleteFirstNodeFromList(list); //8
-	list = deleteFirstNodeFromList(list); //2
-	list = deleteFirstNodeFromList(list); //4
-	list = deleteFirstNodeFromList(list); //1
-	list = deleteFirstNodeFromList(list); //5
-	list = deleteFirstNodeFromList(list); //3
-	printList(list);
-
-	// Sorting the list
-	// top -> [5,4,3,2,1] -> bottom
-	print((int*) "Sorting the List");
-	println();
-	list = sortList(list);
-	printList(list);
-
-	exit(0);
-}
-
-void printPageTable(){
-
-	int* pageTable;
-	int* Node;
-	int* Entry;
-	int size;
-	int* Buffer;
-	int i;
-	int pagenumber;
-	int physicaladdress;
-
-
-	i = 0;
-
-	Buffer = (int*)malloc(4*10);
-
-	pageTable = (int*) *(running_process + 6);
-
-	size = sizeOfList(pageTable);
-
-	println();
-	print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
-	println();
-	print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
-	println();
-	print((int*) "Size of the Pagetable");
-	println();
-	print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
-	println();
-	print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
-	println();
-	print(itoa(size, Buffer, 10, 0, 0));
-	println();
-
-	while(i<size){
-		Node = (int*) getNodeFromList(pageTable, i);
-		Entry = (int*) *(Node + 1);
-		pagenumber = *(Entry);
-		physicaladdress = *(Entry + 1);
-
-		println();
-		print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
-		println();
-		print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
-		println();
-		print(itoa(i, Buffer, 10, 0, 0));
-		print((int*) ". Pagetable Entry");
-		println();
-		print((int*) "Pagenumber");
-		println();
-		print(itoa(pagenumber, Buffer, 10, 0, 0));
-		println();
-		print((int*) "Physical Address");
-		println();
-		print(itoa(physicaladdress, Buffer, 10, 0, 0));
-		println();
-		print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
-		println();
-		print((int*) "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM");
-		println();
-
-		i = i + 1;
-	}
-
-
-
-}
-
-
-// ------------------------ DATA STRUCTURE FOR A PAGE TABLE ENTRY -----------------------
-// Creating a new Page table entry with physical Address and virtual Address.
-int* create_page_table_entry(int pagenumber , int* physical_address){
-	//initialization of the process
-	int* page_table_entry;
-	//memory allocation
-	page_table_entry = malloc (2 * 4);
-
-	//initalization of the arguments of the process
-	*page_table_entry = pagenumber;
-	*(page_table_entry+1) = (int) physical_address;
-
-	return page_table_entry;
-}
-
-// partition the emulated memory (like physical memory on a real machine) into 4KB
-// frames
-// ------------------------ Frame Table ----------------------------------------
-void create_frame_table(){
-
-	int i;
-	int* address;
-	int* Buffer;
-	int number_of_frames;
-
-	i = 0;
-
-	Buffer = (int*)malloc(4*10);
-
-	number_of_frames = memorySize / FRAME_SIZE;
-
-	frame_table = initializeList(frame_table);
-
-	while(i < number_of_frames){
-		address = (int*) (i * FRAME_SIZE);
-		frame_table = addToList(frame_table, (int) address);
-		print((int*) "Frame number");
-		println();
-		print(itoa(i, Buffer, 10, 0, 0));
-		println();
-		print((int*) "Frame address");
-		println();
-		print(itoa((int)address, Buffer, 10, 0, 0));
-		println();
-		i = i + 1;
-	}
-}
-
-// ------------------------ DATA STRUCTURE FOR A PROCESS -----------------------
-// Creating a new Process with Process ID (new_pid), Programm Counter (new_pc),
-// Address to the Register (new_reg), Address to the Memory (new_mem),
-// hi register for multiplication/division (new_reg_hi) and
-// lo register for multiplication/division (new_reg_lo) and
-int* create_process(int new_pid, int* new_reg, int new_reg_hi, int new_reg_lo){
-	//initialization of the process
-	int* process;
-	int* start;
-	int* page_table;
-	int* virtual_memory;
-	int* Buffer;
-
-	Buffer = (int*)malloc(4*10);
-
-	if(new_pid == 0){
-
-		process = malloc (6 * 4);
-
-		//initalization of the arugments of the process
-		*process = new_pid;
-		*(process+1) = 0;
-		*(process+2) = (int) new_reg;
-		*(process+3) = * memory;
-		*(process+4) = new_reg_hi;
-		*(process+5) = new_reg_lo;
-
-		return process;
-	}
-	else{
-
-		process = malloc (7 * 4);
-    		virtual_memory = malloc(virtual_memory_size);
-
-		print((int*) "Virtual Memory");
-		println();
-		print(itoa((int)virtual_memory, Buffer, 10, 0, 0));
-		println();
-		print((int*) "Virtual Memory Size");
-		println();
-		print(itoa(virtual_memory_size, Buffer, 10, 0, 0));
-		println();
-
-		page_table = initializeList(page_table);
-
-		//initalization of the argments of the process
-		*process = new_pid;
-		*(process+1) = 0;
-		*(process+2) = (int) new_reg;
-		//each process gets a 4MB virtual address space.
-		*(process+3) = * virtual_memory;
-		*(process+4) = new_reg_hi;
-		*(process+5) = new_reg_lo;
-		*(process+6) = (int) page_table;
-
-		return process;
-	}
-}
-
-void schedule_and_switch(){
-	int size;
-	int *node;
-	size = sizeOfList(ready_queue);
-	//if the ready queue is empty, the running process can continue
-	if(size == 0){
-		print((int*) "empty---------");
-		println();
-		return;
-	}
-	//else the processes have to be switched so that the next process from the ready queue is allowed to run
-	else{
-		// 1. Saving the states of the running process in the ready queue
-		ready_queue = addToList(ready_queue, (int) running_process);
-		// 2. Switching the running process and get the first of the ready queue
-		node = (int*) getNodeFromList(ready_queue, size);
-		running_process = (int*) *(node+1);
-
-		// 3. Delete the first Process from ready queue because it is the running process
-		ready_queue = deleteFirstNodeFromList(ready_queue);
-	}
-}
-
-// ------------------------ READY QUEUE ----------------------------------------
-// Creating a Ready queue with n processes and with m as number of instructions
-void create_ready_queue(int n, int m){
-	int *new_process;
-	int pid;
-	int *new_reg;
-
-	numb_of_instr = m;
-	pid = 1;
-	ready_queue = initializeList(ready_queue);
-	running_process_id = 0;
-
-	while(pid < n){
-		new_reg = malloc(4*32);
-		new_process = create_process(pid, new_reg, reg_hi, reg_lo);
-		ready_queue = addToList(ready_queue, (int) new_process);
-		pid = pid + 1;
-	}
-}
-
 void emulate(int argc, int *argv) {
     print(selfieName);
     print((int*) ": this is selfie's mipster executing ");
@@ -6302,7 +6462,6 @@ void emulate(int argc, int *argv) {
 
     up_copyArguments(argc, argv);
 
-    //run(argc, (int*) argv);
     kOS(argc, (int*) argv);
 
     print(selfieName);
@@ -6384,7 +6543,7 @@ int selfie(int argc, int* argv) {
 
                 if (binaryLength > 0) {
                     debug = 0;
-		    booting = 1;
+		    trap_flag = 0;
 
                     emulate(argc, argv);
                 } else {
@@ -6418,20 +6577,20 @@ int selfie(int argc, int* argv) {
                 }
 
                 return 0;
-            } else if (stringCompare((int*) *argv, (int*) "-k")) {
-		initMemory(atoi((int*) *(argv+1)) * MEGABYTE);
-
-		argc = argc - 1;
-                argv = argv + 1;
-		booting = 1;
-                kOS(argc, (int*) argv);
-
-                return 0;
             } else if (stringCompare((int*) *argv, (int*) "-t")) {
 		argc = argc - 1;
                 argv = argv + 1;
 
 		testList();
+
+                return 0;
+            } else if (stringCompare((int*) *argv, (int*) "-k")) {
+		initMemory(atoi((int*) *(argv+1)) * MEGABYTE);
+
+		argc = argc - 1;
+                argv = argv + 1;
+		trap_flag = 0;
+                kOS(argc, (int*) argv);
 
                 return 0;
             } else
@@ -6443,18 +6602,17 @@ int selfie(int argc, int* argv) {
 }
 
 int main(int argc, int *argv) {
-
-
     initLibrary();
+
     initScanner();
+    
     initRegister();
     initDecoder();
 
     initInterpreter();
 
-    ticks = 10000000;
+    ticks = 100000000;
     number_of_processes = 5;
-    prints = 1;
 
     selfieName = (int*) *argv;
 
