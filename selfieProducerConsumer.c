@@ -900,16 +900,15 @@ int loadFlag = 0;
 int *queue_t;
 int *q_tail;
 int *q_head;
-int mc_bump = 0;
-int firstInsertFlag = 1;
-
+void test();
 void init_mcqueue();
 void mc_enqueue(int *queue_t, int value);
 void mc_decueue(int *queue_t, int * value);
 int * init_node(int *queue_t, int value);
+int mc_bump = 0;
 void print_mc_queue(int *queue_t);
 int CAS(int * node, int old, int new);
-void create_thread(int pId);
+int firstInsertFlag = 1;
 
 // ------------------------- INITIALIZATION ------------------------
 
@@ -3432,13 +3431,14 @@ int searchPageTable(int vaddr){
     int i;
     int frame;
     int offset;
-    int debugFlag = 0;
+    int debugFlag;
+    debugFlag= 0;
     
     frame = vaddr/4096;
     offset = vaddr%4096;
     
     if(*(pageTable+frame)==0){
-        pageFault == 1;
+        pageFault = 1;
         *(pageTable+frame) = freeListKernel;//freeList;
         freeListKernel = freeListKernel + 4096;
 
@@ -3982,10 +3982,6 @@ void syscall_switch(){
     
     numberofInstructions = 0; //reset number of instructions
     
-    print("Thread: ");
-    print(itoa(process,string_buffer,10,0));
-    println();
-    
     *(memory+communicationSegment+10) = 0; //exit
 
     
@@ -4156,21 +4152,21 @@ int main_os(){
     memory = 0;
     initInterpreter();
     readyqueue = 0;
-    
+
     loadFlag = 1;
     freeListKernel = 2097152;
     
-    loadProcess("producerConsumer.mips",2);
-    create_thread(3);
-    segmentStart = segmentStart + segSize;
     
-    //loadProcess("test.mips",2);
-    //segmentStart = segmentStart + segSize;
-    //loadProcess("test.mips",3);
-    //segmentStart = segmentStart + segSize;
-    //loadProcess("test.mips",4);
-    //segmentStart = segmentStart + segSize;
+    init_mcqueue();
+    
+    loadProcess("test.mips",2);
+    segmentStart = segmentStart + segSize;
+    loadProcess("test.mips",3);
+    segmentStart = segmentStart + segSize;
+    loadProcess("test.mips",4);
+    segmentStart = segmentStart + segSize;
     //loadProcess("test.mips",5);
+    loadProcess("selfieForTesting.mips",5);
     
     loadFlag = 0;
    
@@ -4328,33 +4324,20 @@ int *getPageTableStart(int pId){
     return pageTableProcess;
 }
 
-void create_thread(int pId){
-    int * segment;
-    
-    *(registers+REG_SP) = segSize-1024;
-    segment = insertSegment(pId,segPointer,segSize,segmentTable);
-    push(memory,0,reg_hi,reg_lo,pc,pId,segment,*(registers+REG_GP),*(registers+REG_SP),*(registers+REG_K1),pageTable,readyqueue);
-    
-}
-
-
 //----------------------MICHAEL-SCOTT QUEUE ------------------------
 
 void init_mcqueue(){
     int * ab;
-    int i;
-    i =0;
-    queue_t = 3*1024*1024 + 100;
     
+    queue_t = 4*1024*1024 + 100;
     q_tail = malloc(1*4);
     q_head = malloc(1*4);
-    
-    *(queue_t) = 0;
-    *(queue_t+1) = 0; //ref Number
-    mc_bump = 0;
-    
+    mc_bump = *(4*1024*1024 + 92);// = mc_bump;
+   
     *(q_head) = queue_t;
     *(q_tail) = queue_t;
+    
+    
     
 }
 
@@ -4370,33 +4353,36 @@ void mc_enqueue(int * queue_t, int value ){
     
     l_break = 0;
     node = init_node(queue_t, value);
-    
+
     while(l_break == 0){
+
         tail = *(q_tail);
         tail_count = *(tail+1);
         tail_next = *(tail);
         tail_count = *(tail_next+1);
         
-        if(firstInsertFlag == 1){ //fix with shared mememory!!!
+        if(firstInsertFlag == 1){
             firstInsertFlag = 0;
             return;
         }
         
         if(tail == *(q_tail)){
             if(tail_next == 0){
-                println();
+            
                 if(CAS(tail,(int)(tail_next),(int)(node)) == 1){
                     l_break = 1;
                 }
-                
+                   
             }
             else{
+                
                 CAS(q_tail,(int)(tail),(int)(tail_next));
             }
         }
         
     }
     CAS(q_tail,(int)(tail),(int)(node));
+    
 }
 
 void mc_decueue(int * queue_t, int * pvalue){
@@ -4404,9 +4390,10 @@ void mc_decueue(int * queue_t, int * pvalue){
     int * tail;
     int * head_next;
     int l_break;
-    
     l_break= 0;
-
+    
+    
+    
     while(l_break == 0){
         head = *(q_head);
         tail = *(q_tail);
@@ -4423,6 +4410,7 @@ void mc_decueue(int * queue_t, int * pvalue){
                 CAS(q_tail, tail+12, (int)(*(tail)));
             }
             else{
+                
                 pvalue = head_next + 2;
                 if(CAS(q_head,(int)(head),(int)(head_next)) == 1){
                     l_break = 1;
@@ -4431,10 +4419,12 @@ void mc_decueue(int * queue_t, int * pvalue){
         }
     }
     
-    
     *(head) = 0;
     *(head+1) = 0;
     *(head+2) = 0;
+    
+
+    
 }
 
 
@@ -4444,6 +4434,8 @@ int * init_node(int * queue_t, int value){
     *(queue_t + mc_bump+2) = value; // value
     mc_bump = mc_bump + 3;
     
+    *(4*1024*1024 + 92) = mc_bump;
+
     return queue_t+(mc_bump-3);
 }
 
@@ -4451,8 +4443,6 @@ void print_mc_queue(int * queue_t){
     int *queue;
     queue= *(q_head);
     
-    print("printing mc queue ");
-    println();
     
     while((int)(queue) !=0){
         print(itoa(*(queue+2),string_buffer,10,0));
@@ -4463,23 +4453,26 @@ void print_mc_queue(int * queue_t){
     println();
     
 }
-
+                   
 int CAS(int * node, int old, int new){
-    
+   
     if(*(node) != old){
         return 0;
     }
     
+    
     *(node) = new;
+    
     
     return 1;
 }
+                   
 
 
-
-
-
-
+                   
+    
+                   
+                   
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
 // -----------------------------------------------------------------
@@ -5452,7 +5445,36 @@ void scheduler(){
     
 }
 
-
+void test(){
+    int i;
+    int j;
+    int * fg;
+    i = 1;
+    j = 0;
+    
+    init_mcqueue();
+    
+    print("Encueueing 10 Elements!");
+    println();
+    while(i<16){
+        mc_enqueue(queue_t,i);
+        if(i % 10 == 0){
+            print_mc_queue(queue_t);
+            sched_yield();
+            
+            print("Decueueing 10 Elements and Encueueing additional 5!");
+            println();
+            while(j<10){
+                mc_decueue(queue_t,fg);
+                j = j+1;
+            }
+        }
+        i = i+1;
+    }
+    print_mc_queue(queue_t);
+    sched_yield();
+  
+}
 
 // -----------------------------------------------------------------
 // ----------------------------- MAIN ------------------------------
@@ -5491,6 +5513,6 @@ int main(int argc, int *argv) {
             exit(-1);
         }
     } else{
-        main_os();
+        test();
     }
 }

@@ -13,7 +13,9 @@ compile:
 	-touch out
 	./selfie -c < selfie.c
 	-mv out selfie.mips
-
+	-touch out
+	./selfie -c < selfieProducerConsumer.c
+	-mv out producerConsumer.mips
 
 run: 
 	./selfie -m 32 test.mips
